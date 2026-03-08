@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, sku, description, price, cost, stock_quantity, category, image_url } = body;
+    const { name, sku, description, price, cost, cost_currency, cost_exchange_rate, stock_quantity, category, image_url } = body;
 
     if (!name || !sku || price == null) {
       return NextResponse.json({ error: 'name, sku, and price are required' }, { status: 400 });
@@ -27,6 +27,8 @@ export async function POST(request: NextRequest) {
       description: description ? String(description).trim() : null,
       price: Number(price),
       cost: Number(cost ?? 0),
+      cost_currency: cost_currency ? String(cost_currency) : 'SGD',
+      cost_exchange_rate: Number(cost_exchange_rate ?? 1),
       stock_quantity: Number(stock_quantity ?? 0),
       category: category ? String(category).trim() : null,
       image_url: image_url ? String(image_url).trim() : null,

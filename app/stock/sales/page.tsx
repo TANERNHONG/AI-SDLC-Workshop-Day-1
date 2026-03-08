@@ -10,6 +10,17 @@ function fmtCurrency(n: number) {
 function fmtDate(s: string) {
   return new Date(s).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
+function fmtDay(s: string) {
+  return new Date(s).toLocaleDateString('en-SG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+function fmtMonth(s: string) {
+  return new Date(s).toLocaleDateString('en-SG', { month: 'long', year: 'numeric' });
+}
+function groupKey(s: string, mode: 'day' | 'month') {
+  const d = new Date(s);
+  if (mode === 'month') return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return d.toISOString().slice(0, 10);
+}
 
 // ── Channel Badge ─────────────────────────────────────────────────────────────
 
@@ -496,6 +507,7 @@ function EditSaleModal({ sale, onClose, onSaved }: { sale: SaleWithItems; onClos
   const [paynowRef, setPaynowRef] = useState(sale.paynow_ref ?? '');
   const [status, setStatus] = useState(sale.status);
   const [channel, setChannel] = useState(sale.channel ?? 'direct');
+  const [saleDate, setSaleDate] = useState(sale.sale_date.slice(0, 16).replace(' ', 'T'));
   const [shippingCharged, setShippingCharged] = useState(String(sale.shipping_charged ?? 0));
   const [shippingActual, setShippingActual] = useState(String(sale.shipping_actual ?? 0));
   const [saving, setSaving] = useState(false);
@@ -513,7 +525,7 @@ function EditSaleModal({ sale, onClose, onSaved }: { sale: SaleWithItems; onClos
       const res = await fetch(`/api/stock/sales/${sale.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notes: notes.trim() || null, status, channel, buyer_name: buyerName.trim() || null, buyer_username: buyerUsername.trim() || null, paynow_ref: paynowRef.trim() || null, shipping_charged: parseFloat(shippingCharged) || 0, shipping_actual: parseFloat(shippingActual) || 0 }),
+        body: JSON.stringify({ notes: notes.trim() || null, status, channel, sale_date: saleDate.replace('T', ' ') + ':00', buyer_name: buyerName.trim() || null, buyer_username: buyerUsername.trim() || null, paynow_ref: paynowRef.trim() || null, shipping_charged: parseFloat(shippingCharged) || 0, shipping_actual: parseFloat(shippingActual) || 0 }),
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? 'Failed'); }
       onSaved();
@@ -661,6 +673,18 @@ function EditSaleModal({ sale, onClose, onSaved }: { sale: SaleWithItems; onClos
 
           {!showRefund && (
             <>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                  Sale Date & Time
+                </label>
+                <input
+                  type="datetime-local"
+                  value={saleDate}
+                  onChange={(e) => setSaleDate(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
                   Status
@@ -866,6 +890,16 @@ function SalesContent() {
   const [deleteSale, setDeleteSale] = useState<SaleWithItems | null>(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [groupMode, setGroupMode] = useState<'none' | 'day' | 'month'>('none');
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
 
   const fetchSales = useCallback(async () => {
     setLoading(true);
@@ -895,6 +929,24 @@ function SalesContent() {
   );
 
   const totalRevenue = filtered.filter((s) => s.status === 'completed').reduce((a, s) => a + s.total, 0);
+
+  // Build grouped data for Day / Month views
+  const groups: { key: string; label: string; sales: SaleWithItems[] }[] = (() => {
+    if (groupMode === 'none') return [{ key: '__all', label: '', sales: filtered }];
+    const map = new Map<string, SaleWithItems[]>();
+    for (const s of filtered) {
+      const k = groupKey(s.sale_date, groupMode);
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(s);
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([key, sales]) => ({
+        key,
+        label: groupMode === 'day' ? fmtDay(sales[0].sale_date) : fmtMonth(sales[0].sale_date),
+        sales,
+      }));
+  })();
 
   return (
     <div className="space-y-6">
@@ -951,6 +1003,22 @@ function SalesContent() {
             </button>
           ))}
         </div>
+        {/* Group toggle */}
+        <div className="flex gap-1.5 bg-gray-100 dark:bg-gray-800 p-1 rounded-xl shrink-0">
+          {(['none', 'day', 'month'] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => { setGroupMode(mode); setCollapsedGroups(new Set()); }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                groupMode === mode
+                  ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+              }`}
+            >
+              {mode === 'none' ? 'List' : mode === 'day' ? 'By Day' : 'By Month'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Table */}
@@ -967,84 +1035,119 @@ function SalesContent() {
           )}
         </div>
       ) : (
-        <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 dark:border-gray-800 text-xs text-gray-400 uppercase tracking-wide">
-                <th className="text-left px-5 py-3.5 font-medium">Invoice</th>
-                <th className="text-left px-3 py-3.5 font-medium hidden sm:table-cell">Date & Time</th>
-                <th className="text-left px-3 py-3.5 font-medium hidden lg:table-cell">Items</th>
-                <th className="text-left px-3 py-3.5 font-medium hidden md:table-cell">Channel</th>
-                <th className="text-right px-3 py-3.5 font-medium hidden sm:table-cell">Subtotal</th>
-                <th className="text-right px-3 py-3.5 font-medium">Total</th>
-                <th className="text-left px-3 py-3.5 font-medium">Status</th>
-                <th className="px-5 py-3.5 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-              {filtered.map((sale) => (
-                <tr key={sale.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                  <td className="px-5 py-4">
-                    <p className="font-semibold text-gray-900 dark:text-white">{sale.invoice_number}</p>
-                    {sale.buyer_name && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{sale.buyer_name}{sale.buyer_username ? <span className="text-gray-400 ml-1">· {sale.buyer_username}</span> : null}</p>}
-                    {!sale.buyer_name && sale.notes && <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{sale.notes}</p>}
-                  </td>
-                  <td className="px-3 py-4 text-gray-500 dark:text-gray-400 text-xs hidden sm:table-cell">
-                    {fmtDate(sale.sale_date)}
-                  </td>
-                  <td className="px-3 py-4 hidden lg:table-cell">
-                    <div className="space-y-0.5">
-                      {sale.items.slice(0, 2).map((item) => (
-                        <p key={item.id} className="text-xs text-gray-500 dark:text-gray-400">
-                          {item.product_name} × {item.quantity}
-                          {(item.refunded_quantity ?? 0) > 0 && (
-                            <span className="text-amber-500 ml-1">(-{item.refunded_quantity})</span>
-                          )}
-                        </p>
+        <div className="space-y-4">
+          {groups.map((group) => {
+            const isCollapsed = collapsedGroups.has(group.key);
+            const groupRevenue = group.sales.filter(s => s.status === 'completed').reduce((a, s) => a + s.total, 0);
+            const groupOrders = group.sales.filter(s => s.status === 'completed').length;
+            return (
+              <div key={group.key} className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+                {/* Group header (only shown in Day/Month mode) */}
+                {groupMode !== 'none' && (
+                  <button
+                    onClick={() => toggleGroup(group.key)}
+                    className="w-full flex items-center justify-between px-5 py-3 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-100 dark:border-gray-800 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <svg
+                        className={`w-4 h-4 text-gray-400 transition-transform ${isCollapsed ? '-rotate-90' : ''}`}
+                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                      <span className="font-semibold text-gray-800 dark:text-white text-sm">{group.label}</span>
+                      <span className="text-xs text-gray-400">{group.sales.length} order{group.sales.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400 tabular-nums">{fmtCurrency(groupRevenue)}</span>
+                      <span className="text-xs text-gray-400 ml-2">{groupOrders} completed</span>
+                    </div>
+                  </button>
+                )}
+
+                {/* Sales table */}
+                {!isCollapsed && (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100 dark:border-gray-800 text-xs text-gray-400 uppercase tracking-wide">
+                        <th className="text-left px-5 py-3.5 font-medium">Invoice</th>
+                        <th className="text-left px-3 py-3.5 font-medium hidden sm:table-cell">Date & Time</th>
+                        <th className="text-left px-3 py-3.5 font-medium hidden lg:table-cell">Items</th>
+                        <th className="text-left px-3 py-3.5 font-medium hidden md:table-cell">Channel</th>
+                        <th className="text-right px-3 py-3.5 font-medium hidden sm:table-cell">Subtotal</th>
+                        <th className="text-right px-3 py-3.5 font-medium">Total</th>
+                        <th className="text-left px-3 py-3.5 font-medium">Status</th>
+                        <th className="px-5 py-3.5 font-medium"></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
+                      {group.sales.map((sale) => (
+                        <tr key={sale.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                          <td className="px-5 py-4">
+                            <p className="font-semibold text-gray-900 dark:text-white">{sale.invoice_number}</p>
+                            {sale.buyer_name && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{sale.buyer_name}{sale.buyer_username ? <span className="text-gray-400 ml-1">· {sale.buyer_username}</span> : null}</p>}
+                            {!sale.buyer_name && sale.notes && <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{sale.notes}</p>}
+                          </td>
+                          <td className="px-3 py-4 text-gray-500 dark:text-gray-400 text-xs hidden sm:table-cell">
+                            {fmtDate(sale.sale_date)}
+                          </td>
+                          <td className="px-3 py-4 hidden lg:table-cell">
+                            <div className="space-y-0.5">
+                              {sale.items.slice(0, 2).map((item) => (
+                                <p key={item.id} className="text-xs text-gray-500 dark:text-gray-400">
+                                  {item.product_name} × {item.quantity}
+                                  {(item.refunded_quantity ?? 0) > 0 && (
+                                    <span className="text-amber-500 ml-1">(-{item.refunded_quantity})</span>
+                                  )}
+                                </p>
+                              ))}
+                              {sale.items.length > 2 && (
+                                <p className="text-xs text-gray-300 dark:text-gray-600">+{sale.items.length - 2} more</p>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-4 hidden md:table-cell">
+                            <ChannelBadge channel={sale.channel ?? 'direct'} />
+                          </td>
+                          <td className="px-3 py-4 text-right text-gray-500 dark:text-gray-400 tabular-nums hidden sm:table-cell">
+                            {fmtCurrency(sale.subtotal)}
+                          </td>
+                          <td className="px-3 py-4 text-right font-bold text-gray-900 dark:text-white tabular-nums">
+                            {fmtCurrency(sale.total)}
+                          </td>
+                          <td className="px-3 py-4">
+                            <StatusBadge status={sale.status} />
+                          </td>
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-1 justify-end">
+                              <button
+                                onClick={() => setEditSale(sale)}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950 transition-colors"
+                                title="Edit sale"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => setDeleteSale(sale)}
+                                className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
+                                title="Delete sale"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
                       ))}
-                      {sale.items.length > 2 && (
-                        <p className="text-xs text-gray-300 dark:text-gray-600">+{sale.items.length - 2} more</p>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-3 py-4 hidden md:table-cell">
-                    <ChannelBadge channel={sale.channel ?? 'direct'} />
-                  </td>
-                  <td className="px-3 py-4 text-right text-gray-500 dark:text-gray-400 tabular-nums hidden sm:table-cell">
-                    {fmtCurrency(sale.subtotal)}
-                  </td>
-                  <td className="px-3 py-4 text-right font-bold text-gray-900 dark:text-white tabular-nums">
-                    {fmtCurrency(sale.total)}
-                  </td>
-                  <td className="px-3 py-4">
-                    <StatusBadge status={sale.status} />
-                  </td>
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-1 justify-end">
-                      <button
-                        onClick={() => setEditSale(sale)}
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950 transition-colors"
-                        title="Edit sale"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                      </button>
-                      <button
-                        onClick={() => setDeleteSale(sale)}
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
-                        title="Delete sale"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

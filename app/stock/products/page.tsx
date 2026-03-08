@@ -26,6 +26,8 @@ function ProductModal({
     description: product?.description ?? '',
     price: product?.price.toString() ?? '',
     cost: product?.cost.toString() ?? '',
+    cost_currency: product?.cost_currency ?? 'SGD',
+    cost_exchange_rate: (product?.cost_exchange_rate ?? 1).toString(),
     category: product?.category ?? '',
   });
   const [saving, setSaving] = useState(false);
@@ -50,6 +52,8 @@ function ProductModal({
           description: form.description.trim() || null,
           price: parseFloat(form.price) || 0,
           cost: parseFloat(form.cost) || 0,
+          cost_currency: form.cost_currency,
+          cost_exchange_rate: parseFloat(form.cost_exchange_rate) || 1,
           category: form.category.trim() || null,
         }),
       });
@@ -150,22 +154,62 @@ function ProductModal({
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-                Cost Price (SGD)
-              </label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={form.cost}
-                  onChange={(e) => setForm({ ...form, cost: e.target.value })}
-                  placeholder="0.00"
-                  className="w-full pl-7 pr-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all tabular-nums"
-                />
+            <div className="col-span-2">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                    Cost Price
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={form.cost}
+                      onChange={(e) => setForm({ ...form, cost: e.target.value })}
+                      placeholder="0.00"
+                      className="w-full pl-7 pr-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all tabular-nums"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                    Currency
+                  </label>
+                  <select
+                    value={form.cost_currency}
+                    onChange={(e) => setForm({ ...form, cost_currency: e.target.value, cost_exchange_rate: e.target.value === 'SGD' ? '1' : form.cost_exchange_rate })}
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                  >
+                    <option value="SGD">SGD</option>
+                    <option value="USD">USD</option>
+                    <option value="CNY">CNY</option>
+                    <option value="MYR">MYR</option>
+                    <option value="EUR">EUR</option>
+                    <option value="GBP">GBP</option>
+                  </select>
+                </div>
               </div>
+              {form.cost_currency !== 'SGD' && (
+                <div className="mt-3">
+                  <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                    Exchange Rate (1 {form.cost_currency} = ? SGD)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.0001"
+                    min="0.0001"
+                    value={form.cost_exchange_rate}
+                    onChange={(e) => setForm({ ...form, cost_exchange_rate: e.target.value })}
+                    placeholder="e.g. 1.35"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all tabular-nums"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    SGD cost = {form.cost || '0'} {form.cost_currency} × {form.cost_exchange_rate || '1'} = {fmtCurrency(parseFloat(form.cost || '0') * parseFloat(form.cost_exchange_rate || '1'))}
+                  </p>
+                </div>
+              )}
             </div>
 
             {!isNew && product && (
@@ -200,17 +244,24 @@ function ProductModal({
           </div>
 
           {/* Margin Preview */}
-          {form.price && form.cost && parseFloat(form.price) > 0 && (
-            <div className="bg-indigo-50 dark:bg-indigo-950 rounded-xl px-4 py-3 text-sm">
-              <p className="text-gray-600 dark:text-gray-300 font-medium">
-                Margin:{' '}
-                <span className="text-indigo-700 dark:text-indigo-300 font-bold">
-                  {fmtCurrency(parseFloat(form.price) - parseFloat(form.cost || '0'))}
-                  {' '}({((1 - parseFloat(form.cost || '0') / parseFloat(form.price)) * 100).toFixed(1)}%)
-                </span>
-              </p>
-            </div>
-          )}
+          {form.price && form.cost && parseFloat(form.price) > 0 && (() => {
+            const costSGD = parseFloat(form.cost || '0') * (parseFloat(form.cost_exchange_rate || '1'));
+            const margin = parseFloat(form.price) - costSGD;
+            const marginPct = (1 - costSGD / parseFloat(form.price)) * 100;
+            return (
+              <div className="bg-indigo-50 dark:bg-indigo-950 rounded-xl px-4 py-3 text-sm">
+                <p className="text-gray-600 dark:text-gray-300 font-medium">
+                  Margin:{' '}
+                  <span className="text-indigo-700 dark:text-indigo-300 font-bold">
+                    {fmtCurrency(margin)}{' '}({marginPct.toFixed(1)}%)
+                  </span>
+                  {form.cost_currency !== 'SGD' && (
+                    <span className="text-gray-400 text-xs ml-2">(cost {fmtCurrency(costSGD)} SGD)</span>
+                  )}
+                </p>
+              </div>
+            );
+          })()}
         </form>
 
         {/* Footer */}

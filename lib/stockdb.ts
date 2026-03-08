@@ -8,8 +8,10 @@ export interface Product {
   name: string;
   sku: string;
   description: string | null;
-  price: number;          // selling price (dollars)
-  cost: number;           // cost price (dollars)
+  price: number;              // selling price (SGD)
+  cost: number;               // cost price (in cost_currency)
+  cost_currency: string;      // currency of cost price (e.g. 'USD', 'SGD')
+  cost_exchange_rate: number; // rate to convert cost → SGD (cost × rate = SGD cost)
   stock_quantity: number;
   category: string | null;
   image_url: string | null;
@@ -45,7 +47,8 @@ export interface SaleItem {
   product_name: string;   // snapshot at time of sale
   product_sku: string;
   unit_price: number;
-  unit_cost: number;      // cost price snapshot at time of sale (for PnL)
+  unit_cost: number;      // cost price snapshot at time of sale (in original currency)
+  unit_cost_sgd: number;  // unit cost converted to SGD for PnL calculations
   quantity: number;
   refunded_quantity: number; // how many units have been refunded
   line_total: number;
@@ -296,17 +299,22 @@ try { db.exec('ALTER TABLE sales ADD COLUMN shipping_actual REAL NOT NULL DEFAUL
 try { db.exec('ALTER TABLE purchases ADD COLUMN shipping_cost REAL NOT NULL DEFAULT 0'); } catch { /* already exists */ }
 try { db.exec("ALTER TABLE purchases ADD COLUMN currency TEXT NOT NULL DEFAULT 'SGD'"); } catch { /* already exists */ }
 try { db.exec('ALTER TABLE purchases ADD COLUMN exchange_rate REAL NOT NULL DEFAULT 1'); } catch { /* already exists */ }
+try { db.exec("ALTER TABLE products ADD COLUMN cost_currency TEXT NOT NULL DEFAULT 'SGD'"); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE products ADD COLUMN cost_exchange_rate REAL NOT NULL DEFAULT 1'); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE sale_items ADD COLUMN unit_cost_sgd REAL NOT NULL DEFAULT 0'); } catch { /* already exists */ }
 
 // ─── Product DB ──────────────────────────────────────────────────────────────
 
 export const productDB = {
   create(data: Omit<Product, 'id' | 'created_at' | 'updated_at'>): Product {
     const stmt = db.prepare(`
-      INSERT INTO products (name, sku, description, price, cost, stock_quantity, category, image_url, is_active)
-      VALUES (@name, @sku, @description, @price, @cost, 0, @category, @image_url, @is_active)
+      INSERT INTO products (name, sku, description, price, cost, cost_currency, cost_exchange_rate, stock_quantity, category, image_url, is_active)
+      VALUES (@name, @sku, @description, @price, @cost, @cost_currency, @cost_exchange_rate, 0, @category, @image_url, @is_active)
     `);
     const result = stmt.run({
       ...data,
+      cost_currency: data.cost_currency ?? 'SGD',
+      cost_exchange_rate: data.cost_exchange_rate ?? 1,
       is_active: data.is_active ? 1 : 0,
     });
     return productDB.getById(Number(result.lastInsertRowid))!;
@@ -335,7 +343,7 @@ export const productDB = {
 
   update(id: number, data: Partial<Omit<Product, 'id' | 'created_at' | 'updated_at'>>): Product | undefined {
     // stock_quantity is computed — ignore it if passed
-    const allowed = ['name', 'sku', 'description', 'price', 'cost', 'category', 'image_url', 'is_active'];
+    const allowed = ['name', 'sku', 'description', 'price', 'cost', 'cost_currency', 'cost_exchange_rate', 'category', 'image_url', 'is_active'];
     const entries = Object.entries(data).filter(([k]) => allowed.includes(k));
     if (entries.length === 0) return productDB.getById(id);
     const sets = entries.map(([k]) => `${k} = @${k}`).join(', ');
@@ -488,8 +496,8 @@ export const saleDB = {
       const saleId = Number(saleResult.lastInsertRowid);
 
       const itemStmt = db.prepare(`
-        INSERT INTO sale_items (sale_id, product_id, product_name, product_sku, unit_price, unit_cost, quantity, line_total)
-        VALUES (@sale_id, @product_id, @product_name, @product_sku, @unit_price, @unit_cost, @quantity, @line_total)
+        INSERT INTO sale_items (sale_id, product_id, product_name, product_sku, unit_price, unit_cost, unit_cost_sgd, quantity, line_total)
+        VALUES (@sale_id, @product_id, @product_name, @product_sku, @unit_price, @unit_cost, @unit_cost_sgd, @quantity, @line_total)
       `);
 
       for (const item of items) {
@@ -502,6 +510,7 @@ export const saleDB = {
           product_sku: product.sku,
           unit_price: item.unit_price,
           unit_cost: product.cost,
+          unit_cost_sgd: product.cost * (product.cost_exchange_rate ?? 1),
           quantity: item.quantity,
           line_total: item.unit_price * item.quantity,
         });
@@ -743,7 +752,7 @@ export const purchaseDB = {
         });
         // Update product cost to latest purchase cost on receive
         if (status === 'received') {
-          productDB.update(item.product_id, { cost: item.unit_cost });
+          productDB.update(item.product_id, { cost: item.unit_cost, cost_currency: currency, cost_exchange_rate: exchange_rate });
         }
       }
       return purchaseDB.getById(purchaseId)!;
@@ -788,9 +797,11 @@ export const purchaseDB = {
         }
         // Update product cost if status is (or will be) received
         const newStatus = (data.status ?? purchase.status) as string;
+        const updCurrency = data.currency ?? purchase.currency;
+        const updRate = data.exchange_rate ?? purchase.exchange_rate;
         if (newStatus === 'received') {
           for (const item of data.items) {
-            productDB.update(item.product_id, { cost: item.unit_cost });
+            productDB.update(item.product_id, { cost: item.unit_cost, cost_currency: updCurrency, cost_exchange_rate: updRate });
           }
         }
       }
@@ -809,7 +820,7 @@ export const purchaseDB = {
       // Update product cost when status changes to received
       if (!data.items && newStatus === 'received' && purchase.status === 'pending') {
         for (const item of purchase.items) {
-          productDB.update(item.product_id, { cost: item.unit_cost });
+          productDB.update(item.product_id, { cost: item.unit_cost, cost_currency: currency, cost_exchange_rate: exchange_rate });
         }
       }
 
@@ -865,7 +876,7 @@ export const purchaseDB = {
     // Update product cost when marking as received
     if (status === 'received' && purchase.status === 'pending') {
       for (const item of purchase.items) {
-        productDB.update(item.product_id, { cost: item.unit_cost });
+        productDB.update(item.product_id, { cost: item.unit_cost, cost_currency: purchase.currency, cost_exchange_rate: purchase.exchange_rate });
       }
     }
     db.prepare("UPDATE purchases SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, id);
@@ -901,9 +912,12 @@ export const pnlDB = {
       FROM sales WHERE status = 'completed' AND sale_date >= ? AND sale_date <= ?
     `).get(startDate, end) as any;
     const cogsRow = db.prepare(`
-      SELECT COALESCE(SUM(si.unit_cost * si.quantity), 0) AS cogs
+      SELECT COALESCE(SUM(
+        COALESCE(p.cost * p.cost_exchange_rate, 0) * si.quantity
+      ), 0) AS cogs
       FROM sale_items si
       INNER JOIN sales s ON s.id = si.sale_id
+      LEFT JOIN products p ON p.id = si.product_id
       WHERE s.status = 'completed' AND s.sale_date >= ? AND s.sale_date <= ?
     `).get(startDate, end) as any;
     const purchaseRow = db.prepare(`
@@ -939,7 +953,12 @@ export const pnlDB = {
         COALESCE(SUM(s.total), 0) - COALESCE(SUM(agg.item_cogs), 0) AS gross_profit
       FROM sales s
       LEFT JOIN (
-        SELECT sale_id, SUM(unit_cost * quantity) AS item_cogs FROM sale_items GROUP BY sale_id
+        SELECT si2.sale_id, SUM(
+          COALESCE(p2.cost * p2.cost_exchange_rate, 0) * si2.quantity
+        ) AS item_cogs
+        FROM sale_items si2
+        LEFT JOIN products p2 ON p2.id = si2.product_id
+        GROUP BY si2.sale_id
       ) agg ON agg.sale_id = s.id
       WHERE s.status = 'completed' AND s.sale_date >= ? AND s.sale_date <= ?
       GROUP BY date(s.sale_date)
@@ -954,10 +973,11 @@ export const pnlDB = {
         si.product_name,
         SUM(si.quantity)                              AS total_quantity,
         SUM(si.line_total)                            AS revenue,
-        SUM(si.unit_cost * si.quantity)               AS cogs,
-        SUM(si.line_total) - SUM(si.unit_cost * si.quantity) AS gross_profit
+        SUM(COALESCE(p.cost * p.cost_exchange_rate, 0) * si.quantity) AS cogs,
+        SUM(si.line_total) - SUM(COALESCE(p.cost * p.cost_exchange_rate, 0) * si.quantity) AS gross_profit
       FROM sale_items si
       INNER JOIN sales s ON s.id = si.sale_id
+      LEFT JOIN products p ON p.id = si.product_id
       WHERE s.status = 'completed' AND s.sale_date >= ? AND s.sale_date <= ?
       GROUP BY si.product_id, si.product_name
       ORDER BY gross_profit DESC
