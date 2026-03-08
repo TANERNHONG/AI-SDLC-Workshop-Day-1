@@ -9,8 +9,13 @@ const JWT_SECRET = new TextEncoder().encode(
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow public routes
-  if (pathname.startsWith('/login') || pathname.startsWith('/api/auth')) {
+  // Allow public routes (stock app has its own standalone access, no auth required)
+  if (
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/stock') ||
+    pathname.startsWith('/api/stock')
+  ) {
     return NextResponse.next();
   }
 
