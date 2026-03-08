@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { items, discount, tax, notes, sale_date } = body;
+    const { items, discount, tax, notes, sale_date, channel } = body;
 
     if (!Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: 'items array is required' }, { status: 400 });
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const sale = saleDB.create(items, { discount, tax, notes, sale_date });
+    const sale = saleDB.create(items, { discount, tax, notes, sale_date, channel });
     return NextResponse.json(sale, { status: 201 });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message ?? 'Failed to create sale' }, { status: 500 });

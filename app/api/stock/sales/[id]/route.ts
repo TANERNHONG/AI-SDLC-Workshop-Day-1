@@ -18,13 +18,13 @@ export async function PUT(
   const { id } = await params;
   try {
     const body = await request.json();
-    const { status, notes, discount, tax, sale_date } = body;
+    const { status, notes, discount, tax, sale_date, channel } = body;
 
     if (status) {
       saleDB.updateStatus(Number(id), status);
     }
 
-    const updated = saleDB.update(Number(id), { notes, discount, tax, sale_date });
+    const updated = saleDB.update(Number(id), { notes, discount, tax, sale_date, channel });
     if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(updated);
   } catch (err: any) {

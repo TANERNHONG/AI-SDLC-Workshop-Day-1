@@ -99,6 +99,170 @@ export default function AnalyticsPage() {
     units: p.total_quantity,
   }));
 
+  // ── HTML Report Generator ──────────────────────────────────────────────────
+
+  const generateReport = () => {
+    const { startDate, endDate } = getDateRange(selectedRange);
+    const labels   = JSON.stringify(lineDisplayData.map(d => d.date));
+    const revenues = JSON.stringify(lineDisplayData.map(d => d.total));
+    const orders   = JSON.stringify(lineDisplayData.map(d => d.order_count));
+    const barNames = JSON.stringify(productData.map(p => p.product_name));
+    const barRevs  = JSON.stringify(productData.map(p => p.total_revenue));
+
+    const productRows = productData.map((p, i) => `
+      <tr class="${i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}">
+        <td class="px-4 py-2">${p.product_name}</td>
+        <td class="px-4 py-2 text-right">${p.total_quantity}</td>
+        <td class="px-4 py-2 text-right font-semibold text-indigo-700">${fmtCurrency(p.total_revenue)}</td>
+      </tr>`).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StockCheck Analytics Report — ${selectedRange} Days</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1f2937; background: #f9fafb; padding: 32px; }
+    .header { margin-bottom: 32px; }
+    .header h1 { font-size: 28px; font-weight: 800; color: #111827; }
+    .header p  { font-size: 14px; color: #6b7280; margin-top: 4px; }
+    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; }
+    .card-label { font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
+    .card-value { font-size: 26px; font-weight: 800; color: #111827; margin-top: 6px; }
+    .card-sub   { font-size: 12px; color: #9ca3af; margin-top: 4px; }
+    .section { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; margin-bottom: 24px; }
+    .section h2 { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+    .chart-wrap { position: relative; height: 280px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+    th { text-align: left; padding: 10px 16px; font-size: 11px; font-weight: 600; text-transform: uppercase; color: #6b7280; border-bottom: 1px solid #e5e7eb; }
+    th:not(:first-child) { text-align: right; }
+    td { padding: 8px 16px; border-bottom: 1px solid #f3f4f6; }
+    td:not(:first-child) { text-align: right; }
+    .footer { text-align: center; font-size: 12px; color: #9ca3af; margin-top: 32px; }
+    @media print { body { background: white; padding: 20px; } .section { page-break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>📊 StockCheck Analytics Report</h1>
+    <p>Period: ${startDate} to ${endDate} (${selectedRange} days) · Generated on ${new Date().toLocaleString('en-SG')}</p>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <div class="card-label">Total Revenue</div>
+      <div class="card-value">${fmtCurrency(totalRevenue)}</div>
+      <div class="card-sub">Last ${selectedRange} days</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Total Orders</div>
+      <div class="card-value">${totalOrders}</div>
+      <div class="card-sub">Last ${selectedRange} days</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Peak Day Revenue</div>
+      <div class="card-value">${peakDay ? fmtCurrency(peakDay.total) : '—'}</div>
+      <div class="card-sub">${peakDay ? new Date(peakDay.date).toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Daily Revenue Trend</h2>
+    <div class="chart-wrap"><canvas id="lineChart"></canvas></div>
+  </div>
+
+  <div class="section">
+    <h2>Top Products by Revenue</h2>
+    <div class="chart-wrap"><canvas id="barChart"></canvas></div>
+  </div>
+
+  <div class="section">
+    <h2>Top Products Table</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Units Sold</th>
+          <th>Revenue</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${productRows}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer">StockCheck v1.2 · Report generated ${new Date().toLocaleString('en-SG')}</div>
+
+  <script>
+    new Chart(document.getElementById('lineChart'), {
+      type: 'line',
+      data: {
+        labels: ${labels},
+        datasets: [{
+          label: 'Revenue (SGD)',
+          data: ${revenues},
+          borderColor: '#6366f1',
+          backgroundColor: 'rgba(99,102,241,0.08)',
+          borderWidth: 2.5,
+          pointRadius: 0,
+          tension: 0.3,
+          fill: true,
+        }, {
+          label: 'Orders',
+          data: ${orders},
+          borderColor: '#10b981',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.3,
+          borderDash: [5, 3],
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxTicksLimit: 8, font: { size: 11 } } },
+          y: { grid: { color: '#f3f4f6' }, ticks: { callback: v => '$' + Number(v).toLocaleString(), font: { size: 11 } } }
+        }
+      }
+    });
+    new Chart(document.getElementById('barChart'), {
+      type: 'bar',
+      data: {
+        labels: ${barNames},
+        datasets: [{
+          label: 'Revenue (SGD)',
+          data: ${barRevs},
+          backgroundColor: '#6366f1',
+          borderRadius: 6,
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { callback: v => '$' + Number(v).toLocaleString(), font: { size: 11 } } },
+          y: { ticks: { font: { size: 11 } } }
+        }
+      }
+    });
+  </script>
+</body>
+</html>`;
+
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -107,21 +271,34 @@ export default function AnalyticsPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Analytics</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Sales performance overview</p>
         </div>
-        {/* Range Selector */}
-        <div className="flex gap-1.5 bg-gray-100 dark:bg-gray-800 p-1 rounded-xl">
-          {RANGES.map((r) => (
-            <button
-              key={r.days}
-              onClick={() => setSelectedRange(r.days)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                selectedRange === r.days
-                  ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Range Selector */}
+          <div className="flex gap-1.5 bg-gray-100 dark:bg-gray-800 p-1 rounded-xl">
+            {RANGES.map((r) => (
+              <button
+                key={r.days}
+                onClick={() => setSelectedRange(r.days)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                  selectedRange === r.days
+                    ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+          {/* Generate Report */}
+          <button
+            onClick={generateReport}
+            disabled={loading}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 shadow-sm transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Generate Report
+          </button>
         </div>
       </div>
 

@@ -11,6 +11,25 @@ function fmtDate(s: string) {
   return new Date(s).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+// ── Channel Badge ─────────────────────────────────────────────────────────────
+
+const CHANNEL_OPTIONS = [
+  { value: 'direct',    label: 'Direct',    color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300' },
+  { value: 'carousell', label: 'Carousell', color: 'bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300' },
+  { value: 'shopee',    label: 'Shopee',    color: 'bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300' },
+  { value: 'lazada',    label: 'Lazada',    color: 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300' },
+  { value: 'telegram',  label: 'Telegram',  color: 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300' },
+];
+
+function ChannelBadge({ channel }: { channel: string }) {
+  const opt = CHANNEL_OPTIONS.find(o => o.value === channel) ?? CHANNEL_OPTIONS[0];
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${opt.color}`}>
+      {opt.label}
+    </span>
+  );
+}
+
 // ── Status Badge ──────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
@@ -40,6 +59,7 @@ function NewSaleModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
   const [discount, setDiscount] = useState('0');
   const [tax, setTax] = useState('0');
   const [notes, setNotes] = useState('');
+  const [channel, setChannel] = useState('direct');
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -101,6 +121,7 @@ function NewSaleModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
           discount: discountAmt,
           tax: taxAmt,
           notes: notes.trim() || undefined,
+          channel,
         }),
       });
       if (!res.ok) {
@@ -249,17 +270,40 @@ function NewSaleModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
           {/* Totals + Notes */}
           {cart.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-                  Notes (optional)
-                </label>
-                <textarea
-                  rows={3}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Customer name, order notes…"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
-                />
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                    Sales Channel
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {CHANNEL_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setChannel(opt.value)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                          channel === opt.value
+                            ? 'bg-indigo-600 text-white border-indigo-600'
+                            : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-indigo-300'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                    Notes (optional)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Customer name, order notes…"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                  />
+                </div>
               </div>
               <div className="space-y-3">
                 <div className="flex gap-3">
@@ -346,6 +390,7 @@ function NewSaleModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
 function EditSaleModal({ sale, onClose, onSaved }: { sale: SaleWithItems; onClose: () => void; onSaved: () => void }) {
   const [notes, setNotes] = useState(sale.notes ?? '');
   const [status, setStatus] = useState(sale.status);
+  const [channel, setChannel] = useState(sale.channel ?? 'direct');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -356,7 +401,7 @@ function EditSaleModal({ sale, onClose, onSaved }: { sale: SaleWithItems; onClos
       const res = await fetch(`/api/stock/sales/${sale.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notes: notes.trim() || null, status }),
+        body: JSON.stringify({ notes: notes.trim() || null, status, channel }),
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? 'Failed'); }
       onSaved();
@@ -430,6 +475,28 @@ function EditSaleModal({ sale, onClose, onSaved }: { sale: SaleWithItems; onClos
                 ⚠️ Stock quantities will be restored when saving.
               </p>
             )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+              Sales Channel
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {CHANNEL_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setChannel(opt.value)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                    channel === opt.value
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-indigo-300'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div>
@@ -612,6 +679,7 @@ function SalesContent() {
                 <th className="text-left px-5 py-3.5 font-medium">Invoice</th>
                 <th className="text-left px-3 py-3.5 font-medium hidden sm:table-cell">Date & Time</th>
                 <th className="text-left px-3 py-3.5 font-medium hidden lg:table-cell">Items</th>
+                <th className="text-left px-3 py-3.5 font-medium hidden md:table-cell">Channel</th>
                 <th className="text-right px-3 py-3.5 font-medium hidden sm:table-cell">Subtotal</th>
                 <th className="text-right px-3 py-3.5 font-medium">Total</th>
                 <th className="text-left px-3 py-3.5 font-medium">Status</th>
@@ -639,6 +707,9 @@ function SalesContent() {
                         <p className="text-xs text-gray-300 dark:text-gray-600">+{sale.items.length - 2} more</p>
                       )}
                     </div>
+                  </td>
+                  <td className="px-3 py-4 hidden md:table-cell">
+                    <ChannelBadge channel={sale.channel ?? 'direct'} />
                   </td>
                   <td className="px-3 py-4 text-right text-gray-500 dark:text-gray-400 tabular-nums hidden sm:table-cell">
                     {fmtCurrency(sale.subtotal)}

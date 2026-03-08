@@ -246,7 +246,7 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
           <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 space-y-3">
             <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Add Items</p>
             <div className="grid grid-cols-12 gap-2 items-end">
-              <div className="col-span-5">
+              <div className="col-span-3">
                 <label className="block text-xs text-gray-500 mb-1">Search Product</label>
                 <input value={productSearch} onChange={e => setProductSearch(e.target.value)} placeholder="Name or SKU…"
                   className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
@@ -259,7 +259,7 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
                   {filteredProducts.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
                 </select>
               </div>
-              <div className="col-span-1">
+              <div className="col-span-2">
                 <label className="block text-xs text-gray-500 mb-1">Qty</label>
                 <input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
@@ -269,7 +269,7 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
                 <input type="number" min="0" step="0.01" value={unitCost} onChange={e => setUnitCost(e.target.value)} placeholder="0.00"
                   className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
-              <div className="col-span-1">
+              <div className="col-span-2">
                 <button onClick={addToCart} className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors">
                   Add
                 </button>

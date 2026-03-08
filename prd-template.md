@@ -69,8 +69,8 @@ PRD_DRAFT = {
       "Priority": "High"
     },
     {
-      "Feature Name": "Analytics Charts",
-      "Description": "7 / 30 / 90-day range selector; Recharts LineChart plotting daily revenue and order count; horizontal BarChart ranking top-10 products by revenue. Summary cards show totals and peak-day revenue.",
+      "Feature Name": "Analytics Charts & HTML Report",
+      "Description": "7 / 30 / 90-day range selector; Recharts LineChart plotting daily revenue and order count; horizontal BarChart ranking top-10 products by revenue. Summary cards show totals and peak-day revenue. 'Generate Report' button produces a self-contained HTML file with embedded charts (Chart.js CDN), summary stats, product tables, and print-ready CSS — opens in a new tab or downloads.",
       "Priority": "Medium"
     },
     {
@@ -87,12 +87,27 @@ PRD_DRAFT = {
       "Feature Name": "Profit & Loss Dashboard",
       "Description": "PnL tab showing gross revenue, COGS (cost of goods sold captured per sale from product cost at time of sale), gross profit, gross margin %, and total purchase spend. Includes a multi-line Recharts chart (Revenue vs COGS vs Gross Profit) and a per-product PnL breakdown table. 7 / 30 / 90-day range selector.",
       "Priority": "High"
+    },
+    {
+      "Feature Name": "Sales Channel Tracking",
+      "Description": "Tag each sale with its origin channel: Direct, Carousell, Shopee, Lazada, or Telegram. Channel selector in the New Sale modal; channel badge displayed in the sales list table; filterable and editable on existing sales. Stored as a non-nullable column with DEFAULT 'direct' added via safe ALTER TABLE migration to preserve existing data.",
+      "Priority": "High"
+    },
+    {
+      "Feature Name": "Data Import & Export",
+      "Description": "Export Sales, Purchases, and P&L summary data as Excel (.xlsx) or JSON. Import Sales and Purchases from a filled-in template Excel file. 'Download Template' button provides header-only sheets with example rows. Server-side validation rejects malformed uploads with error 'Input malformed' and field-level detail. Excel powered by the xlsx (SheetJS) library.",
+      "Priority": "Medium"
+    },
+    {
+      "Feature Name": "HTML Analytics Report",
+      "Description": "One-click 'Generate Report' button on the Analytics page that builds a self-contained HTML report embedding current period data (daily revenue chart via Chart.js CDN, top-products table, summary stats). Opens in a new browser tab and can be saved/printed.",
+      "Priority": "Medium"
     }
   ],
   "User Journey": "1. Owner adds supplier via Purchases → Suppliers tab → 2. Receives stock: creates a Purchase PO, selects supplier, adds products with qty and cost price → stock incremented, product cost updated → 3. Staff opens Dashboard → 4. Clicks 'New Sale' → cart builder → invoice submitted → stock decremented, COGS captured per line → 5. Owner opens PnL tab → sees Gross Profit and margin % for the period → 6. Drills into product PnL table to identify lowest-margin items → 7. Edits cost price on Products page or awaits next purchase to update it.",
-  "Technical Considerations": "Next.js 15.5.6 (App Router) + React 19 + TypeScript (strict); SQLite via better-sqlite3 (synchronous, stock.db separate from todos.db); Recharts 2.x for data visualisation; Tailwind CSS 4 (utility-first, dark-mode ready); no authentication on /stock routes (public within local network); SGD currency formatting (en-SG locale) throughout; WAL mode + foreign keys ON on SQLite; all DB operations synchronous — avoid long-running queries on the main thread. COGS captured via sale_items.unit_cost snapshot (populated from product.cost at time of sale). Existing sales migrated with unit_cost = 0 via ALTER TABLE migration.",
+  "Technical Considerations": "Next.js 15.5.6 (App Router) + React 19 + TypeScript (strict); SQLite via better-sqlite3 (synchronous, stock.db separate from todos.db); Recharts 2.x for data visualisation; xlsx (SheetJS) for Excel import/export; Tailwind CSS 4 (utility-first, dark-mode ready); no authentication on /stock routes (public within local network); SGD currency formatting (en-SG locale) throughout; WAL mode + foreign keys ON on SQLite; all DB operations synchronous — avoid long-running queries on the main thread. COGS captured via sale_items.unit_cost snapshot (populated from product.cost at time of sale). Existing sales migrated with unit_cost = 0 via ALTER TABLE migration. Sales channel stored in sales.channel column (TEXT NOT NULL DEFAULT 'direct') added via safe ALTER TABLE migration. Import validation performed server-side before any DB writes; malformed uploads return HTTP 400 with 'Input malformed' error. HTML reports are generated client-side as Blob URLs with inline Chart.js (CDN) and CSS.",
   "Risks & Dependencies": "1. SQLite not suitable for concurrent writes > 5 simultaneous users — migrate to PostgreSQL if usage scales. 2. better-sqlite3 synchronous API can block the Node.js event loop on heavy queries; add pagination or caching if tables grow large. 3. /stock routes have no auth — add role-based access control before any public deployment. 4. Recharts adds ~200 KB to the bundle; use dynamic imports if Lighthouse scores degrade. 5. Historical sales before Purchases feature was added will show COGS = 0 (unit_cost defaults to 0); this is expected and noted in the UI.",
-  "Timeline & Milestones": "v1.0 MVP (✅ Complete — 8 Mar 2026): Product CRUD, Sales invoice builder, Dashboard heatmap, Analytics charts, Sale edit/void. v1.1 (✅ Complete — 8 Mar 2026): Purchase tracking with supplier management; PnL dashboard with Gross Profit analysis. v1.2 Beta: PDF invoice export, low-stock email/push alerts, CSV export of sales and purchases. v2.0 Launch: Multi-user role-based auth, PostgreSQL migration, PWA / offline support, barcode scanner integration."
+  "Timeline & Milestones": "v1.0 MVP (✅ Complete — 8 Mar 2026): Product CRUD, Sales invoice builder, Dashboard heatmap, Analytics charts, Sale edit/void. v1.1 (✅ Complete — 8 Mar 2026): Purchase tracking with supplier management; PnL dashboard with Gross Profit analysis. v1.2 (✅ Complete — 8 Mar 2026): Sales channel tracking (Carousell / Shopee / Lazada / Telegram / Direct); Data Import & Export (Excel + JSON with templates and validation); HTML analytics report generator. v2.0 Launch: Multi-user role-based auth, PostgreSQL migration, PWA / offline support, barcode scanner integration."
 }
 
 ## Final Output Template (use ONLY at the end)

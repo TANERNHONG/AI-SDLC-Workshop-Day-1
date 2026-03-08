@@ -28,6 +28,7 @@ export interface Sale {
   total: number;
   notes: string | null;
   status: 'completed' | 'refunded' | 'void';
+  channel: string;         // e.g. 'direct' | 'carousell' | 'shopee' | 'lazada' | 'telegram'
   created_at: string;
   updated_at: string;
 }
@@ -239,6 +240,7 @@ db.exec(`
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
 try { db.exec('ALTER TABLE sale_items ADD COLUMN unit_cost REAL NOT NULL DEFAULT 0'); } catch { /* already exists */ }
+try { db.exec("ALTER TABLE sales ADD COLUMN channel TEXT NOT NULL DEFAULT 'direct'"); } catch { /* already exists */ }
 
 // ─── Product DB ──────────────────────────────────────────────────────────────
 
@@ -301,7 +303,7 @@ function generateInvoiceNumber(): string {
 export const saleDB = {
   create(
     items: Array<{ product_id: number; quantity: number; unit_price: number }>,
-    opts: { discount?: number; tax?: number; notes?: string; sale_date?: string } = {}
+    opts: { discount?: number; tax?: number; notes?: string; sale_date?: string; channel?: string } = {}
   ): SaleWithItems {
     const subtotal = items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
     const discount = opts.discount ?? 0;
@@ -310,8 +312,8 @@ export const saleDB = {
 
     const insertSale = db.transaction(() => {
       const saleStmt = db.prepare(`
-        INSERT INTO sales (invoice_number, sale_date, subtotal, discount, tax, total, notes, status)
-        VALUES (@invoice_number, @sale_date, @subtotal, @discount, @tax, @total, @notes, 'completed')
+        INSERT INTO sales (invoice_number, sale_date, subtotal, discount, tax, total, notes, channel, status)
+        VALUES (@invoice_number, @sale_date, @subtotal, @discount, @tax, @total, @notes, @channel, 'completed')
       `);
       const saleResult = saleStmt.run({
         invoice_number: generateInvoiceNumber(),
@@ -321,6 +323,7 @@ export const saleDB = {
         tax,
         total,
         notes: opts.notes ?? null,
+        channel: opts.channel ?? 'direct',
       });
       const saleId = Number(saleResult.lastInsertRowid);
 
@@ -372,8 +375,8 @@ export const saleDB = {
     });
   },
 
-  update(id: number, data: { notes?: string; discount?: number; tax?: number; sale_date?: string; status?: string }): SaleWithItems | undefined {
-    const allowed = ['notes', 'discount', 'tax', 'sale_date', 'status'];
+  update(id: number, data: { notes?: string; discount?: number; tax?: number; sale_date?: string; status?: string; channel?: string }): SaleWithItems | undefined {
+    const allowed = ['notes', 'discount', 'tax', 'sale_date', 'status', 'channel'];
     const entries = Object.entries(data).filter(([k]) => allowed.includes(k));
     if (entries.length === 0) return saleDB.getById(id);
     const sets = entries.map(([k]) => `${k} = @${k}`).join(', ');

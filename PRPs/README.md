@@ -40,21 +40,25 @@ This directory contains detailed Product Requirement Prompts split by feature. E
    - Summary cards: Revenue, COGS, Gross Profit, Margin %, Purchase Spend
    - Line chart (Revenue vs COGS vs Gross Profit) + per-product PnL breakdown table
 
-### Planned Features (v1.2 Beta)
+### Shipped Features (v1.2 — ✅ Shipped 8 Mar 2026)
 
-8. **[08-pdf-invoice.md](08-pdf-invoice.md)** - PDF Invoice Export
-   - Generate a printable / downloadable PDF for any completed sale
-   - Branded layout with line items, totals, invoice number, and business details
+8. **[08-sales-channel.md](08-sales-channel.md)** - Sales Channel Tracking
+   - Channel selector in New Sale modal: Direct, Carousell, Shopee, Lazada, Telegram
+   - Channel badge in sales list table; safe ALTER TABLE migration (existing data preserved)
+   - Channel editable in Edit Sale modal; filterable in future analytics breakdowns
 
-9. **[09-low-stock-alerts.md](09-low-stock-alerts.md)** - Low-Stock Alerts
-   - Configurable per-product minimum stock threshold
-   - Dashboard banner + optional email/push notification when stock falls below threshold
+9. **[09-import-export.md](09-import-export.md)** - Data Import & Export
+   - Export Sales, Purchases, and P&L as Excel (.xlsx) or JSON
+   - Download Template button provides header-only sheets with example rows
+   - Server-side validation: rejects files with missing/wrong columns with "Input malformed" error
+   - Powered by `xlsx` (SheetJS) library
 
-10. **[10-csv-export.md](10-csv-export.md)** - CSV / Excel Export
-    - Export filtered sales list or product catalogue to CSV
-    - Date-range and status filters applied before export
+10. **[10-html-report.md](10-html-report.md)** - HTML Analytics Report
+    - "Generate Report" button on Analytics page builds self-contained HTML
+    - Embeds Chart.js (CDN) bar/line chart data, top-products table, and summary stats
+    - Opens in new browser tab; fully printable/saveable with inline CSS
 
-### Infrastructure (v2.0)
+### Planned Features (v2.0)
 
 11. **[11-auth-roles.md](11-auth-roles.md)** - Role-Based Authentication
     - Admin (full access) and Staff (sales + view-only) roles
@@ -125,8 +129,9 @@ Please help me implement this following the project patterns."
 02-sales-invoicing    → 05-sale-edit-void    (a sale must exist before it can be edited or voided)
 02-sales-invoicing    → 07-pnl-dashboard     (COGS captured per sale; PnL requires sale data)
 06-purchase-tracking  → 07-pnl-dashboard     (purchase spend feed into PnL summary card)
-02-sales-invoicing    → 08-pdf-invoice       (PDF is generated from a completed sale)
-03-dashboard          → 04-analytics         (both consume the same /api/stock/analytics endpoint)
+02-sales-invoicing    → 08-sales-channel     (channel is a property of a sale)
+02-sales-invoicing    → 09-import-export     (export requires existing sales/purchases data)
+04-analytics          → 10-html-report       (report embeds analytics data)
 11-auth-roles         → all features         (auth wraps all /stock routes in v2.0)
 ```
 
@@ -147,10 +152,10 @@ Recommended implementation order:
    - 06: Purchase Tracking & Supplier Management
    - 07: Profit & Loss Dashboard
 
-4. **Phase 4 — Reporting** 🔲 Planned (v1.2 Beta)
-   - 08: PDF Invoice Export
-   - 09: Low-Stock Alerts
-   - 10: CSV / Excel Export
+4. **Phase 4 — Reporting & Data** ✅ Complete (v1.2, 8 Mar 2026)
+   - 08: Sales Channel Tracking (Direct / Carousell / Shopee / Lazada / Telegram)
+   - 09: Data Import & Export (Excel + JSON with templates and server-side validation)
+   - 10: HTML Analytics Report (self-contained with embedded Chart.js)
 
 5. **Phase 5 — Scale & Security** 🔲 Planned (v2.0)
    - 11: Role-Based Authentication
@@ -164,7 +169,8 @@ All PRPs assume:
 - **Framework**: Next.js 15.5.6 (App Router) + React 19 + TypeScript (strict)
 - **Database**: SQLite via `better-sqlite3` (synchronous) — `stock.db` in project root
 - **Charts**: Recharts 2.x (`LineChart`, `BarChart`, `ResponsiveContainer`)
-- **Auth**: None on `/stock` routes (v1.0); Role-based JWT planned for v2.0
+- **Excel**: `xlsx` (SheetJS) for import/export
+- **Auth**: None on `/stock` routes (v1.0–v1.2); Role-based JWT planned for v2.0
 - **Testing**: Playwright E2E (virtual authenticator config in `playwright.config.ts`)
 - **Styling**: Tailwind CSS 4 (utility-first, `dark:` prefix for dark mode)
 - **Currency / Locale**: SGD, `en-SG` locale throughout
@@ -190,5 +196,5 @@ When adding new PRPs:
 ---
 
 **Last Updated**: 8 March 2026  
-**Total PRPs**: 11 (7 shipped · 3 planned · 1 infrastructure)  
-**Total Features Documented**: 11 across v1.0, v1.1, v1.2 Beta, and v2.0 
+**Total PRPs**: 11 (10 shipped · 1 infrastructure)  
+**Total Features Documented**: 11 across v1.0, v1.1, v1.2, and v2.0 
