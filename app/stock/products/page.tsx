@@ -26,7 +26,6 @@ function ProductModal({
     description: product?.description ?? '',
     price: product?.price.toString() ?? '',
     cost: product?.cost.toString() ?? '',
-    stock_quantity: product?.stock_quantity.toString() ?? '0',
     category: product?.category ?? '',
   });
   const [saving, setSaving] = useState(false);
@@ -51,7 +50,6 @@ function ProductModal({
           description: form.description.trim() || null,
           price: parseFloat(form.price) || 0,
           cost: parseFloat(form.cost) || 0,
-          stock_quantity: parseInt(form.stock_quantity) || 0,
           category: form.category.trim() || null,
         }),
       });
@@ -170,19 +168,22 @@ function ProductModal({
               </div>
             </div>
 
+            {!isNew && product && (
             <div>
               <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-                Stock Quantity
+                Stock (computed)
               </label>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={form.stock_quantity}
-                onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all tabular-nums"
-              />
+              <div className={`w-full px-3.5 py-2.5 rounded-xl border bg-gray-100 dark:bg-gray-800/60 text-sm tabular-nums font-semibold ${
+                product.stock_quantity < 0
+                  ? 'border-red-300 dark:border-red-700 text-red-600 dark:text-red-400'
+                  : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'
+              }`}>
+                {product.stock_quantity}
+                <span className="text-xs font-normal text-gray-400 ml-1">units</span>
+              </div>
+              <p className="text-[10px] text-gray-400 mt-1">Auto-calculated from Purchases − Sales ± Adjustments</p>
             </div>
+            )}
 
             <div className="col-span-2">
               <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
@@ -310,6 +311,8 @@ function ProductsContent() {
   const active = filtered.filter((p) => p.is_active);
   const inactive = filtered.filter((p) => !p.is_active);
 
+  const negativeStockProducts = products.filter((p) => p.is_active && p.stock_quantity < 0);
+
   const handleSave = () => {
     setModalProduct(undefined);
     fetchProducts();
@@ -317,6 +320,25 @@ function ProductsContent() {
 
   return (
     <div className="space-y-6">
+      {/* Negative Stock Warning Banner */}
+      {negativeStockProducts.length > 0 && (
+        <div className="flex items-start gap-3 px-4 py-3 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 text-sm">
+          <svg className="w-5 h-5 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-2.694-.833-3.464 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          </svg>
+          <div>
+            <p className="font-semibold">
+              {negativeStockProducts.length === 1
+                ? 'There is an item with Negative Stock. Please check it manually.'
+                : `There are ${negativeStockProducts.length} items with Negative Stock. Please check them manually.`}
+            </p>
+            <p className="text-xs mt-1 text-amber-700 dark:text-amber-400">
+              {negativeStockProducts.map((p) => `${p.name} (${p.stock_quantity})`).join(', ')}
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>

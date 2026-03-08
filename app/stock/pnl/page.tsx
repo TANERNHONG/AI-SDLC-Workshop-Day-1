@@ -11,6 +11,7 @@ type PnLSummary = {
   revenue: number; cogs: number; gross_profit: number;
   gross_margin_pct: number; purchase_spend: number;
   order_count: number; purchase_count: number;
+  shipping_profit: number;
 };
 type DailyPnL  = { date: string; revenue: number; cogs: number; gross_profit: number; };
 type ProductPnL = {
@@ -27,7 +28,11 @@ const fmtPct = (v: number) => `${v.toFixed(1)}%`;
 function getDateRange(days: number): { startDate: string; endDate: string } {
   const end   = new Date();
   const start = new Date();
-  start.setDate(start.getDate() - days + 1);
+  if (days > 0) {
+    start.setDate(start.getDate() - days + 1);
+  } else {
+    start.setFullYear(2000, 0, 1); // "All time"
+  }
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
   return { startDate: fmt(start), endDate: fmt(end) };
 }
@@ -99,7 +104,7 @@ function MarginBadge({ pct }: { pct: number }) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function PnLPage() {
-  const [range, setRange] = useState(30);
+  const [range, setRange] = useState(365);
   const [summary, setSummary] = useState<PnLSummary | null>(null);
   const [daily, setDaily] = useState<DailyPnL[]>([]);
   const [products, setProducts] = useState<ProductPnL[]>([]);
@@ -132,7 +137,7 @@ export default function PnLPage() {
   }));
 
   // Tick density: show fewer labels when range is wide
-  const tickInterval = range <= 7 ? 0 : range <= 30 ? 4 : 13;
+  const tickInterval = range <= 7 ? 0 : range <= 30 ? 4 : range <= 90 ? 13 : range <= 365 ? 29 : 59;
 
   const peakDay = filled.reduce<DailyPnL | null>(
     (best, d) => !best || d.revenue > best.revenue ? d : best, null
@@ -149,12 +154,12 @@ export default function PnLPage() {
           <p className="text-sm text-gray-500 mt-0.5">Revenue, cost of goods sold, and gross profit</p>
         </div>
         <div className="sm:ml-auto flex gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1">
-          {([7, 30, 90] as const).map(d => (
+          {([7, 30, 90, 180, 365, 0] as const).map(d => (
             <button key={d} onClick={() => setRange(d)}
               className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${range === d
                 ? 'bg-white dark:bg-gray-700 shadow text-gray-900 dark:text-white'
                 : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
-              {d}d
+              {d === 0 ? 'All' : `${d}d`}
             </button>
           ))}
         </div>
@@ -168,7 +173,7 @@ export default function PnLPage() {
         <>
           {/* Summary cards */}
           {summary && (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
               <StatCard
                 label="Revenue"
                 value={fmt$(summary.revenue)}
@@ -182,6 +187,15 @@ export default function PnLPage() {
                 sub={hasCogsData ? 'Cost of goods sold' : 'No cost data yet — add purchases'}
                 colorClass="bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400"
                 icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>}
+              />
+              <StatCard
+                label="Shipping P/L"
+                value={fmt$(summary.shipping_profit ?? 0)}
+                sub={summary.shipping_profit >= 0 ? 'Shipping profit' : 'Shipping loss'}
+                colorClass={summary.shipping_profit >= 0
+                  ? 'bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400'
+                  : 'bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400'}
+                icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>}
               />
               <StatCard
                 label="Gross Profit"

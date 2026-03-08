@@ -34,13 +34,20 @@ function ChannelBadge({ channel }: { channel: string }) {
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
-    completed: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300',
-    refunded:  'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
-    void:      'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300',
+    completed:      'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300',
+    partial_refund: 'bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300',
+    refunded:       'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
+    void:           'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300',
+  };
+  const labels: Record<string, string> = {
+    completed: 'Completed',
+    partial_refund: 'Partial Refund',
+    refunded: 'Refunded',
+    void: 'Void',
   };
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${map[status] ?? 'bg-gray-100 text-gray-600'}`}>
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {labels[status] ?? status.charAt(0).toUpperCase() + status.slice(1)}
     </span>
   );
 }
@@ -58,8 +65,14 @@ function NewSaleModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
   const [cart, setCart] = useState<CartItem[]>([]);
   const [discount, setDiscount] = useState('0');
   const [tax, setTax] = useState('0');
-  const [notes, setNotes] = useState('');
+  const [shippingCharged, setShippingCharged] = useState('0');
+  const [shippingActual, setShippingActual] = useState('0');
+  const [buyerName, setBuyerName] = useState('');
+  const [buyerUsername, setBuyerUsername] = useState('');
+  const [paynowRef, setPaynowRef] = useState('');
+  const [additionalNotes, setAdditionalNotes] = useState('');
   const [channel, setChannel] = useState('direct');
+  const [saleDate, setSaleDate] = useState(new Date().toISOString().slice(0, 10));
   const [search, setSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -102,7 +115,10 @@ function NewSaleModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
   const subtotal = cart.reduce((a, c) => a + c.unit_price * c.quantity, 0);
   const discountAmt = parseFloat(discount) || 0;
   const taxAmt = parseFloat(tax) || 0;
-  const total = subtotal - discountAmt + taxAmt;
+  const shippingChargedAmt = parseFloat(shippingCharged) || 0;
+  const shippingActualAmt = parseFloat(shippingActual) || 0;
+  const shippingProfit = shippingChargedAmt - shippingActualAmt;
+  const total = subtotal - discountAmt + taxAmt + shippingChargedAmt;
 
   const handleSubmit = async () => {
     if (cart.length === 0) { setError('Add at least one product'); return; }
@@ -120,8 +136,14 @@ function NewSaleModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
           })),
           discount: discountAmt,
           tax: taxAmt,
-          notes: notes.trim() || undefined,
+          shipping_charged: shippingChargedAmt,
+          shipping_actual: shippingActualAmt,
+          notes: additionalNotes.trim() || undefined,
+          buyer_name: buyerName.trim() || undefined,
+          buyer_username: buyerUsername.trim() || undefined,
+          paynow_ref: paynowRef.trim() || undefined,
           channel,
+          sale_date: saleDate + ' 00:00:00',
         }),
       });
       if (!res.ok) {
@@ -273,6 +295,17 @@ function NewSaleModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
               <div className="space-y-4">
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                    Sale Date
+                  </label>
+                  <input
+                    type="date"
+                    value={saleDate}
+                    onChange={(e) => setSaleDate(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
                     Sales Channel
                   </label>
                   <div className="flex flex-wrap gap-2">
@@ -294,15 +327,38 @@ function NewSaleModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-                    Notes (optional)
+                    Buyer Info (optional)
                   </label>
-                  <textarea
-                    rows={3}
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Customer name, order notes…"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
-                  />
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={buyerName}
+                      onChange={(e) => setBuyerName(e.target.value)}
+                      placeholder="Name of buyer"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                    <input
+                      type="text"
+                      value={buyerUsername}
+                      onChange={(e) => setBuyerUsername(e.target.value)}
+                      placeholder="Username of buyer (e.g. @handle)"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                    <input
+                      type="text"
+                      value={paynowRef}
+                      onChange={(e) => setPaynowRef(e.target.value)}
+                      placeholder="PayNow Ref"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                    <textarea
+                      rows={2}
+                      value={additionalNotes}
+                      onChange={(e) => setAdditionalNotes(e.target.value)}
+                      placeholder="Additional notes…"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                    />
+                  </div>
                 </div>
               </div>
               <div className="space-y-3">
@@ -340,6 +396,40 @@ function NewSaleModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
                     </div>
                   </div>
                 </div>
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                      Shipping Charged ($)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={shippingCharged}
+                        onChange={(e) => setShippingCharged(e.target.value)}
+                        className="w-full pl-7 pr-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 tabular-nums"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                      Actual Shipping ($)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={shippingActual}
+                        onChange={(e) => setShippingActual(e.target.value)}
+                        className="w-full pl-7 pr-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 tabular-nums"
+                      />
+                    </div>
+                  </div>
+                </div>
                 <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4 space-y-2 text-sm">
                   <div className="flex justify-between text-gray-500 dark:text-gray-400">
                     <span>Subtotal</span>
@@ -355,6 +445,18 @@ function NewSaleModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
                     <div className="flex justify-between text-gray-500 dark:text-gray-400">
                       <span>Tax / GST</span>
                       <span className="tabular-nums">+{fmtCurrency(taxAmt)}</span>
+                    </div>
+                  )}
+                  {shippingChargedAmt > 0 && (
+                    <div className="flex justify-between text-gray-500 dark:text-gray-400">
+                      <span>Shipping (charged)</span>
+                      <span className="tabular-nums">+{fmtCurrency(shippingChargedAmt)}</span>
+                    </div>
+                  )}
+                  {(shippingChargedAmt > 0 || shippingActualAmt > 0) && (
+                    <div className={`flex justify-between text-xs ${shippingProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                      <span>Shipping P/L ({fmtCurrency(shippingChargedAmt)} − {fmtCurrency(shippingActualAmt)})</span>
+                      <span className="tabular-nums">{shippingProfit >= 0 ? '+' : ''}{fmtCurrency(shippingProfit)}</span>
                     </div>
                   )}
                   <div className="flex justify-between font-bold text-gray-900 dark:text-white border-t border-gray-200 dark:border-gray-700 pt-2">
@@ -389,10 +491,20 @@ function NewSaleModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
 
 function EditSaleModal({ sale, onClose, onSaved }: { sale: SaleWithItems; onClose: () => void; onSaved: () => void }) {
   const [notes, setNotes] = useState(sale.notes ?? '');
+  const [buyerName, setBuyerName] = useState(sale.buyer_name ?? '');
+  const [buyerUsername, setBuyerUsername] = useState(sale.buyer_username ?? '');
+  const [paynowRef, setPaynowRef] = useState(sale.paynow_ref ?? '');
   const [status, setStatus] = useState(sale.status);
   const [channel, setChannel] = useState(sale.channel ?? 'direct');
+  const [shippingCharged, setShippingCharged] = useState(String(sale.shipping_charged ?? 0));
+  const [shippingActual, setShippingActual] = useState(String(sale.shipping_actual ?? 0));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [showRefund, setShowRefund] = useState(false);
+  const [refundQtys, setRefundQtys] = useState<Record<number, number>>({});
+
+  const isFullyRefunded = sale.status === 'refunded' || sale.status === 'void';
+  const canPartialRefund = sale.status === 'completed' || sale.status === 'partial_refund';
 
   const handleSubmit = async () => {
     setSaving(true);
@@ -401,7 +513,7 @@ function EditSaleModal({ sale, onClose, onSaved }: { sale: SaleWithItems; onClos
       const res = await fetch(`/api/stock/sales/${sale.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notes: notes.trim() || null, status, channel }),
+        body: JSON.stringify({ notes: notes.trim() || null, status, channel, buyer_name: buyerName.trim() || null, buyer_username: buyerUsername.trim() || null, paynow_ref: paynowRef.trim() || null, shipping_charged: parseFloat(shippingCharged) || 0, shipping_actual: parseFloat(shippingActual) || 0 }),
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? 'Failed'); }
       onSaved();
@@ -411,11 +523,39 @@ function EditSaleModal({ sale, onClose, onSaved }: { sale: SaleWithItems; onClos
     }
   };
 
+  const handlePartialRefund = async () => {
+    const refunds = Object.entries(refundQtys)
+      .filter(([, qty]) => qty > 0)
+      .map(([itemId, qty]) => ({ sale_item_id: Number(itemId), refund_qty: qty }));
+
+    if (refunds.length === 0) { setError('Select at least one item to refund'); return; }
+
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/stock/sales/${sale.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refunds }),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? 'Failed'); }
+      onSaved();
+    } catch (err: any) {
+      setError(err.message);
+      setSaving(false);
+    }
+  };
+
+  const totalRefundAmount = Object.entries(refundQtys).reduce((sum, [itemId, qty]) => {
+    const item = sale.items.find(i => i.id === Number(itemId));
+    return sum + (item ? item.unit_price * qty : 0);
+  }, 0);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md z-10">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800">
+      <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-lg z-10 flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
           <div>
             <h2 className="text-lg font-bold text-gray-900 dark:text-white">Edit Sale</h2>
             <p className="text-xs text-gray-400">{sale.invoice_number}</p>
@@ -426,99 +566,253 @@ function EditSaleModal({ sale, onClose, onSaved }: { sale: SaleWithItems; onClos
             </svg>
           </button>
         </div>
-        <div className="px-6 py-5 space-y-4">
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
           {error && (
             <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-xl px-4 py-2.5 text-sm text-red-700 dark:text-red-300">
               {error}
             </div>
           )}
 
-          {/* Items summary */}
-          <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4 space-y-1.5">
-            {sale.items.map((item) => (
-              <div key={item.id} className="flex justify-between text-sm">
-                <span className="text-gray-600 dark:text-gray-300">{item.product_name} × {item.quantity}</span>
-                <span className="font-medium text-gray-900 dark:text-white tabular-nums">{fmtCurrency(item.line_total)}</span>
-              </div>
-            ))}
+          {/* Items summary with refund info */}
+          <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-4 space-y-2">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Line Items</span>
+              {canPartialRefund && !showRefund && (
+                <button
+                  onClick={() => setShowRefund(true)}
+                  className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:underline"
+                >
+                  Partial Refund
+                </button>
+              )}
+              {showRefund && (
+                <button
+                  onClick={() => { setShowRefund(false); setRefundQtys({}); }}
+                  className="text-xs font-semibold text-gray-400 hover:underline"
+                >
+                  Cancel Refund
+                </button>
+              )}
+            </div>
+            {sale.items.map((item) => {
+              const refunded = item.refunded_quantity ?? 0;
+              const refundable = item.quantity - refunded;
+              return (
+                <div key={item.id} className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-gray-600 dark:text-gray-300">{item.product_name}</span>
+                      <span className="text-gray-400 ml-1">× {item.quantity}</span>
+                      {refunded > 0 && (
+                        <span className="text-amber-600 dark:text-amber-400 text-xs ml-1.5">
+                          ({refunded} refunded)
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-medium text-gray-900 dark:text-white tabular-nums ml-3">
+                      {fmtCurrency(item.line_total)}
+                    </span>
+                  </div>
+
+                  {/* Partial refund controls */}
+                  {showRefund && refundable > 0 && (
+                    <div className="flex items-center gap-2 ml-2 pb-1">
+                      <label className="text-xs text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                        Refund qty:
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max={refundable}
+                        value={refundQtys[item.id] ?? 0}
+                        onChange={(e) => setRefundQtys(prev => ({
+                          ...prev,
+                          [item.id]: Math.min(Math.max(0, parseInt(e.target.value) || 0), refundable)
+                        }))}
+                        className="w-16 text-center px-2 py-1 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 tabular-nums"
+                      />
+                      <span className="text-xs text-gray-400">/ {refundable} available</span>
+                    </div>
+                  )}
+                  {showRefund && refundable === 0 && (
+                    <p className="text-xs text-gray-400 ml-2 italic">Fully refunded</p>
+                  )}
+                </div>
+              );
+            })}
             <div className="flex justify-between font-bold text-gray-900 dark:text-white border-t border-gray-200 dark:border-gray-700 pt-2 mt-2">
               <span>Total</span>
               <span className="tabular-nums text-indigo-600 dark:text-indigo-400">{fmtCurrency(sale.total)}</span>
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-              Status
-            </label>
-            <div className="flex gap-2">
-              {(['completed', 'refunded', 'void'] as const).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setStatus(s)}
-                  className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all ${
-                    status === s
-                      ? s === 'completed'
-                        ? 'bg-emerald-600 text-white border-emerald-600'
-                        : s === 'refunded'
-                        ? 'bg-amber-500 text-white border-amber-500'
-                        : 'bg-red-600 text-white border-red-600'
-                      : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-300'
-                  }`}
-                >
-                  {s.charAt(0).toUpperCase() + s.slice(1)}
-                </button>
-              ))}
+          {/* Refund summary banner */}
+          {showRefund && totalRefundAmount > 0 && (
+            <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-xl px-4 py-3 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">Refund Amount</p>
+                <p className="text-xs text-amber-600 dark:text-amber-400">Stock will be restored for refunded items</p>
+              </div>
+              <span className="text-lg font-bold text-amber-700 dark:text-amber-300 tabular-nums">
+                {fmtCurrency(totalRefundAmount)}
+              </span>
             </div>
-            {(status === 'refunded' || status === 'void') && sale.status === 'completed' && (
-              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5">
-                ⚠️ Stock quantities will be restored when saving.
-              </p>
-            )}
-          </div>
+          )}
 
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-              Sales Channel
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {CHANNEL_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setChannel(opt.value)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-                    channel === opt.value
-                      ? 'bg-indigo-600 text-white border-indigo-600'
-                      : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-indigo-300'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          {!showRefund && (
+            <>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                  Status
+                </label>
+                <div className="flex gap-2">
+                  {(['completed', 'refunded', 'void'] as const).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setStatus(s)}
+                      className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                        status === s
+                          ? s === 'completed'
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : s === 'refunded'
+                            ? 'bg-amber-500 text-white border-amber-500'
+                            : 'bg-red-600 text-white border-red-600'
+                          : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-gray-300'
+                      }`}
+                    >
+                      {s.charAt(0).toUpperCase() + s.slice(1)}
+                    </button>
+                  ))}
+                </div>
+                {(status === 'refunded' || status === 'void') && (sale.status === 'completed' || sale.status === 'partial_refund') && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5">
+                    ⚠️ All remaining stock quantities will be restored when saving.
+                  </p>
+                )}
+              </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
-              Notes
-            </label>
-            <textarea
-              rows={3}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Optional notes…"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
-            />
-          </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                  Sales Channel
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {CHANNEL_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setChannel(opt.value)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                        channel === opt.value
+                          ? 'bg-indigo-600 text-white border-indigo-600'
+                          : 'border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:border-indigo-300'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                  Shipping Costs
+                </label>
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">Charged $</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={shippingCharged}
+                        onChange={(e) => setShippingCharged(e.target.value)}
+                        className="w-full pl-20 pr-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 tabular-nums"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex-1">
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs">Actual $</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={shippingActual}
+                        onChange={(e) => setShippingActual(e.target.value)}
+                        className="w-full pl-16 pr-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 tabular-nums"
+                      />
+                    </div>
+                  </div>
+                </div>
+                {(() => {
+                  const sc = parseFloat(shippingCharged) || 0;
+                  const sa = parseFloat(shippingActual) || 0;
+                  const sp = sc - sa;
+                  if (sc > 0 || sa > 0) return (
+                    <p className={`text-xs mt-1 ${sp >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
+                      Shipping P/L: {sp >= 0 ? '+' : ''}{fmtCurrency(sp)}
+                    </p>
+                  );
+                  return null;
+                })()}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                  Buyer Info (optional)
+                </label>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={buyerName}
+                    onChange={(e) => setBuyerName(e.target.value)}
+                    placeholder="Name of buyer"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <input
+                    type="text"
+                    value={buyerUsername}
+                    onChange={(e) => setBuyerUsername(e.target.value)}
+                    placeholder="Username of buyer (e.g. @handle)"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <input
+                    type="text"
+                    value={paynowRef}
+                    onChange={(e) => setPaynowRef(e.target.value)}
+                    placeholder="PayNow Ref"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                  <textarea
+                    rows={2}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Additional notes…"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                  />
+                </div>
+              </div>
+            </>
+          )}
         </div>
-        <div className="flex gap-3 px-6 py-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
+        <div className="flex gap-3 px-6 py-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 shrink-0">
           <button onClick={onClose} className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
             Cancel
           </button>
-          <button onClick={handleSubmit} disabled={saving} className="flex-1 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-sm font-semibold text-white transition-colors">
-            {saving ? 'Saving…' : 'Save Changes'}
-          </button>
+          {showRefund ? (
+            <button
+              onClick={handlePartialRefund}
+              disabled={saving || totalRefundAmount === 0}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-sm font-semibold text-white transition-colors"
+            >
+              {saving ? 'Processing…' : `Refund ${fmtCurrency(totalRefundAmount)}`}
+            </button>
+          ) : (
+            <button onClick={handleSubmit} disabled={saving} className="flex-1 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-sm font-semibold text-white transition-colors">
+              {saving ? 'Saving…' : 'Save Changes'}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -640,6 +934,7 @@ function SalesContent() {
           {[
             { label: 'All', value: '' },
             { label: 'Completed', value: 'completed' },
+            { label: 'Partial', value: 'partial_refund' },
             { label: 'Refunded', value: 'refunded' },
             { label: 'Void', value: 'void' },
           ].map((opt) => (
@@ -691,7 +986,8 @@ function SalesContent() {
                 <tr key={sale.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                   <td className="px-5 py-4">
                     <p className="font-semibold text-gray-900 dark:text-white">{sale.invoice_number}</p>
-                    {sale.notes && <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{sale.notes}</p>}
+                    {sale.buyer_name && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{sale.buyer_name}{sale.buyer_username ? <span className="text-gray-400 ml-1">· {sale.buyer_username}</span> : null}</p>}
+                    {!sale.buyer_name && sale.notes && <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{sale.notes}</p>}
                   </td>
                   <td className="px-3 py-4 text-gray-500 dark:text-gray-400 text-xs hidden sm:table-cell">
                     {fmtDate(sale.sale_date)}
@@ -701,6 +997,9 @@ function SalesContent() {
                       {sale.items.slice(0, 2).map((item) => (
                         <p key={item.id} className="text-xs text-gray-500 dark:text-gray-400">
                           {item.product_name} × {item.quantity}
+                          {(item.refunded_quantity ?? 0) > 0 && (
+                            <span className="text-amber-500 ml-1">(-{item.refunded_quantity})</span>
+                          )}
                         </p>
                       ))}
                       {sale.items.length > 2 && (

@@ -34,6 +34,9 @@ export async function POST(req: NextRequest) {
       {
         discount: body.discount ? Number(body.discount) : 0,
         tax: body.tax ? Number(body.tax) : 0,
+        shipping_cost: body.shipping_cost ? Number(body.shipping_cost) : 0,
+        currency: body.currency || 'SGD',
+        exchange_rate: body.exchange_rate ? Number(body.exchange_rate) : 1,
         notes: body.notes || undefined,
         purchase_date: body.purchase_date || undefined,
         invoice_ref: body.invoice_ref || undefined,

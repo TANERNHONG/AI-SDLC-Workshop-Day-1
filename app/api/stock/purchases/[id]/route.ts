@@ -12,10 +12,22 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params;
     const body = await req.json();
-    if (body.status) {
-      purchaseDB.updateStatus(Number(id), body.status as 'received' | 'pending' | 'cancelled');
+    const updateData: Record<string, unknown> = {};
+    if (body.status !== undefined) updateData.status = body.status;
+    if (body.discount !== undefined) updateData.discount = Number(body.discount);
+    if (body.tax !== undefined) updateData.tax = Number(body.tax);
+    if (body.shipping_cost !== undefined) updateData.shipping_cost = Number(body.shipping_cost);
+    if (body.currency !== undefined) updateData.currency = body.currency;
+    if (body.exchange_rate !== undefined) updateData.exchange_rate = Number(body.exchange_rate);
+    if (body.notes !== undefined) updateData.notes = body.notes;
+    if (Array.isArray(body.items)) {
+      updateData.items = body.items.map((i: { product_id: number; quantity: number; unit_cost: number }) => ({
+        product_id: Number(i.product_id),
+        quantity: Number(i.quantity),
+        unit_cost: Number(i.unit_cost),
+      }));
     }
-    const purchase = purchaseDB.getById(Number(id));
+    const purchase = purchaseDB.update(Number(id), updateData as any);
     if (!purchase) return NextResponse.json({ error: 'Not found' }, { status: 404 });
     return NextResponse.json(purchase);
   } catch (err: unknown) {

@@ -17,7 +17,8 @@ type PurchaseItem = { id: number; product_id: number; product_name: string; prod
 type Purchase = {
   id: number; supplier_id: number; supplier_name: string;
   purchase_date: string; invoice_ref: string;
-  subtotal: number; discount: number; tax: number; total_cost: number;
+  subtotal: number; discount: number; tax: number; shipping_cost: number;
+  currency: string; exchange_rate: number; total_cost: number;
   status: 'received' | 'pending' | 'cancelled'; notes: string | null;
   items: PurchaseItem[];
 };
@@ -128,6 +129,35 @@ function SupplierModal({ supplier, onClose, onSave }: {
   );
 }
 
+// ── Currency helpers ──────────────────────────────────────────────────────────
+const CURRENCY_OPTIONS = [
+  { code: 'SGD', symbol: 'S$', label: 'SGD — Singapore Dollar' },
+  { code: 'USD', symbol: 'US$', label: 'USD — US Dollar' },
+  { code: 'EUR', symbol: '€', label: 'EUR — Euro' },
+  { code: 'GBP', symbol: '£', label: 'GBP — British Pound' },
+  { code: 'MYR', symbol: 'RM', label: 'MYR — Malaysian Ringgit' },
+  { code: 'CNY', symbol: '¥', label: 'CNY — Chinese Yuan' },
+  { code: 'JPY', symbol: '¥', label: 'JPY — Japanese Yen' },
+  { code: 'KRW', symbol: '₩', label: 'KRW — Korean Won' },
+  { code: 'THB', symbol: '฿', label: 'THB — Thai Baht' },
+  { code: 'TWD', symbol: 'NT$', label: 'TWD — Taiwan Dollar' },
+  { code: 'AUD', symbol: 'A$', label: 'AUD — Australian Dollar' },
+  { code: 'IDR', symbol: 'Rp', label: 'IDR — Indonesian Rupiah' },
+  { code: 'PHP', symbol: '₱', label: 'PHP — Philippine Peso' },
+  { code: 'VND', symbol: '₫', label: 'VND — Vietnamese Dong' },
+];
+const currSymbol = (code: string) => CURRENCY_OPTIONS.find(c => c.code === code)?.symbol ?? code;
+
+// ── % / $ Toggle Button ──────────────────────────────────────────────────────
+function PctToggle({ isPercent, onToggle }: { isPercent: boolean; onToggle: () => void }) {
+  return (
+    <button type="button" onClick={onToggle} title="Toggle $ / %"
+      className="px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-xs font-semibold text-gray-500 hover:text-indigo-600 hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors tabular-nums min-w-[30px]">
+      {isPercent ? '%' : '$'}
+    </button>
+  );
+}
+
 // ── NewPurchaseModal ──────────────────────────────────────────────────────────
 function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
   suppliers: Supplier[]; products: Product[]; onClose: () => void; onSave: () => void;
@@ -138,7 +168,12 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
   const [status, setStatus] = useState<'received' | 'pending'>('received');
   const [notes, setNotes] = useState('');
   const [discount, setDiscount] = useState('0');
+  const [discountIsPct, setDiscountIsPct] = useState(false);
   const [tax, setTax] = useState('0');
+  const [taxIsPct, setTaxIsPct] = useState(false);
+  const [shippingCost, setShippingCost] = useState('0');
+  const [currency, setCurrency] = useState('SGD');
+  const [exchangeRate, setExchangeRate] = useState('1');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [productSearch, setProductSearch] = useState('');
   const [selectedProductId, setSelectedProductId] = useState('');
@@ -174,7 +209,14 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
   };
 
   const subtotal = cart.reduce((s, i) => s + i.unit_cost * i.quantity, 0);
-  const total = subtotal - (Number(discount) || 0) + (Number(tax) || 0);
+  const discountAmt = discountIsPct ? subtotal * ((Number(discount) || 0) / 100) : (Number(discount) || 0);
+  const taxAmt = taxIsPct ? subtotal * ((Number(tax) || 0) / 100) : (Number(tax) || 0);
+  const shippingAmt = Number(shippingCost) || 0;
+  const rate = Number(exchangeRate) || 1;
+  const foreignTotal = subtotal - discountAmt + taxAmt + shippingAmt;
+  const sgdTotal = foreignTotal * rate;
+  const isForeign = currency !== 'SGD';
+  const sym = currSymbol(currency);
 
   const handleSubmit = async () => {
     if (!supplierId) { setError('Please select a supplier'); return; }
@@ -187,8 +229,11 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
         body: JSON.stringify({
           supplier_id: Number(supplierId),
           items: cart,
-          discount: Number(discount) || 0,
-          tax: Number(tax) || 0,
+          discount: discountAmt,
+          tax: taxAmt,
+          shipping_cost: shippingAmt,
+          currency,
+          exchange_rate: rate,
           notes, purchase_date: purchaseDate,
           invoice_ref: invoiceRef || undefined,
           status,
@@ -242,6 +287,35 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
             </div>
           </div>
 
+          {/* Currency + Exchange Rate */}
+          <div className="bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 rounded-xl p-4 space-y-3">
+            <p className="text-sm font-medium text-sky-700 dark:text-sky-300">Currency & Conversion</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Invoice Currency</label>
+                <select value={currency} onChange={e => { setCurrency(e.target.value); if (e.target.value === 'SGD') setExchangeRate('1'); }}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500">
+                  {CURRENCY_OPTIONS.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Exchange Rate {isForeign && <span className="text-sky-600 dark:text-sky-400">(1 {currency} = ? SGD)</span>}
+                </label>
+                <input type="number" step="0.0001" min="0" value={exchangeRate}
+                  onChange={e => setExchangeRate(e.target.value)}
+                  disabled={!isForeign}
+                  placeholder="1.0000"
+                  className={`w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 ${!isForeign ? 'opacity-50 cursor-not-allowed' : ''}`} />
+              </div>
+            </div>
+            {isForeign && (
+              <p className="text-xs text-sky-600 dark:text-sky-400">
+                All item prices, discount, tax & shipping are in <strong>{currency}</strong>. The final total is converted to SGD at the rate above.
+              </p>
+            )}
+          </div>
+
           {/* Product add row */}
           <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 space-y-3">
             <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Add Items</p>
@@ -265,7 +339,7 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
                   className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
               <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Unit Cost ($)</label>
+                <label className="block text-xs text-gray-500 mb-1">Unit Cost ({sym})</label>
                 <input type="number" min="0" step="0.01" value={unitCost} onChange={e => setUnitCost(e.target.value)} placeholder="0.00"
                   className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
@@ -285,8 +359,8 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
                   <tr>
                     <th className="px-4 py-2 text-left">Product</th>
                     <th className="px-4 py-2 text-right">Qty</th>
-                    <th className="px-4 py-2 text-right">Unit Cost</th>
-                    <th className="px-4 py-2 text-right">Total</th>
+                    <th className="px-4 py-2 text-right">Unit Cost ({sym})</th>
+                    <th className="px-4 py-2 text-right">Total ({sym})</th>
                     <th className="px-2 py-2"></th>
                   </tr>
                 </thead>
@@ -307,7 +381,7 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
                           onChange={e => setCart(c => c.map((ci, i) => i === idx ? { ...ci, unit_cost: Number(e.target.value) || 0 } : ci))}
                           className="w-24 px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-right text-sm" />
                       </td>
-                      <td className="px-4 py-2 text-right font-medium">{fmt$(item.unit_cost * item.quantity)}</td>
+                      <td className="px-4 py-2 text-right font-medium tabular-nums">{sym}{(item.unit_cost * item.quantity).toFixed(2)}</td>
                       <td className="px-2 py-2">
                         <button onClick={() => setCart(c => c.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 p-1">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
@@ -321,24 +395,44 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
           )}
 
           {/* Totals */}
-          <div className="flex flex-col items-end gap-1 text-sm">
+          <div className="flex flex-col items-end gap-1.5 text-sm">
             <div className="flex gap-6">
-              <span className="text-gray-500">Subtotal</span>
-              <span className="font-medium w-28 text-right">{fmt$(subtotal)}</span>
+              <span className="text-gray-500">Subtotal ({sym})</span>
+              <span className="font-medium w-28 text-right tabular-nums">{sym}{subtotal.toFixed(2)}</span>
             </div>
-            <div className="flex gap-4 items-center">
-              <span className="text-gray-500">Discount ($)</span>
+            <div className="flex gap-2 items-center">
+              <span className="text-gray-500">Discount</span>
+              <PctToggle isPercent={discountIsPct} onToggle={() => setDiscountIsPct(p => !p)} />
               <input type="number" min="0" step="0.01" value={discount} onChange={e => setDiscount(e.target.value)}
-                className="w-28 px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-right text-sm" />
+                className="w-24 px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-right text-sm" />
+              {discountIsPct && <span className="text-xs text-gray-400 w-20 text-right tabular-nums">= {sym}{discountAmt.toFixed(2)}</span>}
             </div>
-            <div className="flex gap-4 items-center">
-              <span className="text-gray-500">Tax ($)</span>
+            <div className="flex gap-2 items-center">
+              <span className="text-gray-500">Tax</span>
+              <PctToggle isPercent={taxIsPct} onToggle={() => setTaxIsPct(p => !p)} />
               <input type="number" min="0" step="0.01" value={tax} onChange={e => setTax(e.target.value)}
-                className="w-28 px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-right text-sm" />
+                className="w-24 px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-right text-sm" />
+              {taxIsPct && <span className="text-xs text-gray-400 w-20 text-right tabular-nums">= {sym}{taxAmt.toFixed(2)}</span>}
             </div>
-            <div className="flex gap-6 border-t border-gray-200 dark:border-gray-700 pt-2 mt-1">
-              <span className="font-semibold text-gray-800 dark:text-white">Total Cost</span>
-              <span className="font-bold text-lg text-indigo-600 w-28 text-right">{fmt$(total)}</span>
+            <div className="flex gap-2 items-center">
+              <span className="text-gray-500">Shipping ({sym})</span>
+              <input type="number" min="0" step="0.01" value={shippingCost} onChange={e => setShippingCost(e.target.value)}
+                className="w-24 px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-right text-sm" />
+            </div>
+            {isForeign && (
+              <>
+                <div className="flex gap-6 border-t border-gray-200 dark:border-gray-700 pt-2 mt-1">
+                  <span className="text-gray-500">Total ({currency})</span>
+                  <span className="font-medium w-28 text-right tabular-nums">{sym}{foreignTotal.toFixed(2)}</span>
+                </div>
+                <div className="flex gap-6 text-xs text-gray-400">
+                  <span>× {rate} exchange rate</span>
+                </div>
+              </>
+            )}
+            <div className={`flex gap-6 ${isForeign ? '' : 'border-t border-gray-200 dark:border-gray-700 pt-2 mt-1'}`}>
+              <span className="font-semibold text-gray-800 dark:text-white">Total Cost (SGD)</span>
+              <span className="font-bold text-lg text-indigo-600 w-28 text-right tabular-nums">{fmt$(sgdTotal)}</span>
             </div>
           </div>
 
@@ -354,7 +448,7 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
           <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg">Cancel</button>
           <button onClick={handleSubmit} disabled={saving || cart.length === 0}
             className="px-5 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50 transition-colors">
-            {saving ? 'Creating…' : `Create PO • ${fmt$(total)}`}
+            {saving ? 'Creating…' : `Create PO • ${fmt$(sgdTotal)}`}
           </button>
         </div>
       </div>
@@ -363,23 +457,86 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
 }
 
 // ── EditPurchaseModal ─────────────────────────────────────────────────────────
-function EditPurchaseModal({ purchase, onClose, onSave }: {
-  purchase: Purchase; onClose: () => void; onSave: () => void;
+function EditPurchaseModal({ purchase, products, onClose, onSave }: {
+  purchase: Purchase; products: Product[]; onClose: () => void; onSave: () => void;
 }) {
   const [status, setStatus] = useState(purchase.status);
+  const [notes, setNotes] = useState(purchase.notes ?? '');
+  const [discount, setDiscount] = useState(String(purchase.discount));
+  const [discountIsPct, setDiscountIsPct] = useState(false);
+  const [tax, setTax] = useState(String(purchase.tax));
+  const [taxIsPct, setTaxIsPct] = useState(false);
+  const [shippingCost, setShippingCost] = useState(String(purchase.shipping_cost ?? 0));
+  const [currency, setCurrency] = useState(purchase.currency ?? 'SGD');
+  const [exchangeRate, setExchangeRate] = useState(String(purchase.exchange_rate ?? 1));
+  const [cart, setCart] = useState<CartItem[]>(
+    purchase.items.map(i => ({ product_id: i.product_id, product_name: i.product_name, product_sku: i.product_sku, quantity: i.quantity, unit_cost: i.unit_cost }))
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // Add-item state
+  const [productSearch, setProductSearch] = useState('');
+  const [selectedProductId, setSelectedProductId] = useState('');
+  const [qty, setQty] = useState('1');
+  const [unitCost, setUnitCost] = useState('');
+
+  const activeProducts = products.filter(p => p.is_active);
+  const filteredProducts = activeProducts.filter(p =>
+    !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase())
+  );
+
+  const handleSelectProduct = (id: string) => {
+    setSelectedProductId(id);
+    const p = products.find(p => p.id === Number(id));
+    if (p) setUnitCost(String(p.cost || ''));
+  };
+
+  const addToCart = () => {
+    if (!selectedProductId) return;
+    const product = products.find(p => p.id === Number(selectedProductId));
+    if (!product) return;
+    const q = Math.max(1, Number(qty) || 1);
+    const cost = Math.max(0, Number(unitCost) || 0);
+    const existing = cart.findIndex(c => c.product_id === product.id);
+    if (existing >= 0) {
+      setCart(c => c.map((item, i) => i === existing ? { ...item, quantity: item.quantity + q, unit_cost: cost } : item));
+    } else {
+      setCart(c => [...c, { product_id: product.id, product_name: product.name, product_sku: product.sku, quantity: q, unit_cost: cost }]);
+    }
+    setSelectedProductId(''); setProductSearch(''); setQty('1'); setUnitCost('');
+  };
+
+  const subtotal = cart.reduce((s, i) => s + i.unit_cost * i.quantity, 0);
+  const discountAmt = discountIsPct ? subtotal * ((Number(discount) || 0) / 100) : (Number(discount) || 0);
+  const taxAmt = taxIsPct ? subtotal * ((Number(tax) || 0) / 100) : (Number(tax) || 0);
+  const shippingAmt = Number(shippingCost) || 0;
+  const rate = Number(exchangeRate) || 1;
+  const foreignTotal = subtotal - discountAmt + taxAmt + shippingAmt;
+  const sgdTotal = foreignTotal * rate;
+  const isForeign = currency !== 'SGD';
+  const sym = currSymbol(currency);
 
   const willRestoreStock = purchase.status === 'received' && status === 'cancelled';
   const willAddStock = purchase.status === 'pending' && status === 'received';
 
   const handleSave = async () => {
+    if (cart.length === 0) { setError('At least one item is required'); return; }
     setSaving(true); setError('');
     try {
       const res = await fetch(`/api/stock/purchases/${purchase.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          items: cart,
+          discount: discountAmt,
+          tax: taxAmt,
+          shipping_cost: shippingAmt,
+          currency,
+          exchange_rate: rate,
+          notes: notes.trim() || null,
+          status,
+        }),
       });
       if (!res.ok) { setError((await res.json()).error || 'Failed'); return; }
       onSave(); onClose();
@@ -388,33 +545,159 @@ function EditPurchaseModal({ purchase, onClose, onSave }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800">
-          <h2 className="text-lg font-semibold">Update Purchase</h2>
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800 shrink-0">
+          <div>
+            <h2 className="text-lg font-semibold">Edit Purchase</h2>
+            <p className="text-xs text-gray-400">{purchase.invoice_ref} · {purchase.supplier_name}</p>
+          </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-400">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
           </button>
         </div>
-        <div className="p-6 space-y-4">
+        <div className="overflow-y-auto flex-1 p-6 space-y-5">
           {error && <p className="text-sm text-red-600 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2">{error}</p>}
-          <div>
-            <p className="text-sm text-gray-500 mb-1">PO Ref: <span className="font-medium text-gray-800 dark:text-white">{purchase.invoice_ref}</span></p>
-            <p className="text-sm text-gray-500">Supplier: <span className="font-medium text-gray-800 dark:text-white">{purchase.supplier_name}</span></p>
-          </div>
 
-          {/* Items summary */}
-          <div className="rounded-lg bg-gray-50 dark:bg-gray-800 p-3 text-sm space-y-1">
-            {purchase.items.map(item => (
-              <div key={item.id} className="flex justify-between text-gray-600 dark:text-gray-400">
-                <span>{item.product_name} × {item.quantity}</span>
-                <span>{fmt$(item.line_total)}</span>
+          {/* Line Items — editable */}
+          <div className="space-y-3">
+            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Line Items</p>
+            {cart.length > 0 && (
+              <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 dark:bg-gray-800 text-xs text-gray-500">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Product</th>
+                      <th className="px-3 py-2 text-right w-20">Qty</th>
+                      <th className="px-3 py-2 text-right w-28">Unit Cost</th>
+                      <th className="px-3 py-2 text-right w-24">Total</th>
+                      <th className="px-1 py-2 w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                    {cart.map((item, idx) => (
+                      <tr key={idx}>
+                        <td className="px-3 py-2">
+                          <select value={item.product_id}
+                            onChange={e => {
+                              const p = products.find(pr => pr.id === Number(e.target.value));
+                              if (p) setCart(c => c.map((ci, i) => i === idx ? { ...ci, product_id: p.id, product_name: p.name, product_sku: p.sku } : ci));
+                            }}
+                            className="w-full px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm">
+                            {activeProducts.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
+                          </select>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <input type="number" min="1" value={item.quantity}
+                            onChange={e => setCart(c => c.map((ci, i) => i === idx ? { ...ci, quantity: Math.max(1, Number(e.target.value) || 1) } : ci))}
+                            className="w-full px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-right text-sm" />
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <input type="number" min="0" step="0.01" value={item.unit_cost}
+                            onChange={e => setCart(c => c.map((ci, i) => i === idx ? { ...ci, unit_cost: Number(e.target.value) || 0 } : ci))}
+                            className="w-full px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-right text-sm" />
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium tabular-nums text-gray-700 dark:text-gray-300">{sym}{(item.unit_cost * item.quantity).toFixed(2)}</td>
+                        <td className="px-1 py-2">
+                          <button onClick={() => setCart(c => c.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 p-1">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ))}
-            <div className="flex justify-between font-semibold text-gray-900 dark:text-white border-t border-gray-200 dark:border-gray-700 pt-1 mt-1">
-              <span>Total</span><span>{fmt$(purchase.total_cost)}</span>
+            )}
+            {/* Inline add row */}
+            <div className="grid grid-cols-12 gap-2 items-end bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3">
+              <div className="col-span-4">
+                <label className="block text-xs text-gray-500 mb-1">Add Product</label>
+                <select value={selectedProductId} onChange={e => handleSelectProduct(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm">
+                  <option value="">Select…</option>
+                  {filteredProducts.map(p => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs text-gray-500 mb-1">Qty</label>
+                <input type="number" min="1" value={qty} onChange={e => setQty(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm" />
+              </div>
+              <div className="col-span-3">
+                <label className="block text-xs text-gray-500 mb-1">Unit Cost ({sym})</label>
+                <input type="number" min="0" step="0.01" value={unitCost} onChange={e => setUnitCost(e.target.value)} placeholder="0.00"
+                  className="w-full px-2 py-1.5 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm" />
+              </div>
+              <div className="col-span-3">
+                <button onClick={addToCart} disabled={!selectedProductId}
+                  className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors">
+                  + Add Item
+                </button>
+              </div>
             </div>
           </div>
 
+          {/* Currency & rate */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Currency</label>
+              <select value={currency} onChange={e => { setCurrency(e.target.value); if (e.target.value === 'SGD') setExchangeRate('1'); }}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                {CURRENCY_OPTIONS.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
+                Exchange Rate {isForeign && <span className="text-sky-600 dark:text-sky-400">(1 {currency} = ? SGD)</span>}
+              </label>
+              <input type="number" step="0.0001" min="0" value={exchangeRate}
+                onChange={e => setExchangeRate(e.target.value)}
+                disabled={!isForeign}
+                className={`w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${!isForeign ? 'opacity-50 cursor-not-allowed' : ''}`} />
+            </div>
+          </div>
+
+          {/* Totals */}
+          <div className="flex flex-col items-end gap-1.5 text-sm">
+            <div className="flex gap-6">
+              <span className="text-gray-500">Subtotal ({sym})</span>
+              <span className="font-medium w-28 text-right tabular-nums">{sym}{subtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex gap-2 items-center">
+              <span className="text-gray-500">Discount</span>
+              <PctToggle isPercent={discountIsPct} onToggle={() => setDiscountIsPct(p => !p)} />
+              <input type="number" min="0" step="0.01" value={discount} onChange={e => setDiscount(e.target.value)}
+                className="w-24 px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-right text-sm" />
+              {discountIsPct && <span className="text-xs text-gray-400 w-20 text-right tabular-nums">= {sym}{discountAmt.toFixed(2)}</span>}
+            </div>
+            <div className="flex gap-2 items-center">
+              <span className="text-gray-500">Tax</span>
+              <PctToggle isPercent={taxIsPct} onToggle={() => setTaxIsPct(p => !p)} />
+              <input type="number" min="0" step="0.01" value={tax} onChange={e => setTax(e.target.value)}
+                className="w-24 px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-right text-sm" />
+              {taxIsPct && <span className="text-xs text-gray-400 w-20 text-right tabular-nums">= {sym}{taxAmt.toFixed(2)}</span>}
+            </div>
+            <div className="flex gap-2 items-center">
+              <span className="text-gray-500">Shipping ({sym})</span>
+              <input type="number" min="0" step="0.01" value={shippingCost} onChange={e => setShippingCost(e.target.value)}
+                className="w-24 px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-right text-sm" />
+            </div>
+            {isForeign && (
+              <>
+                <div className="flex gap-6 border-t border-gray-200 dark:border-gray-700 pt-2 mt-1">
+                  <span className="text-gray-500">Total ({currency})</span>
+                  <span className="font-medium w-28 text-right tabular-nums">{sym}{foreignTotal.toFixed(2)}</span>
+                </div>
+                <div className="flex gap-6 text-xs text-gray-400"><span>× {rate} exchange rate</span></div>
+              </>
+            )}
+            <div className={`flex gap-6 ${isForeign ? '' : 'border-t border-gray-200 dark:border-gray-700 pt-2 mt-1'}`}>
+              <span className="font-semibold text-gray-800 dark:text-white">Total Cost (SGD)</span>
+              <span className="font-bold text-lg text-indigo-600 w-28 text-right tabular-nums">{fmt$(sgdTotal)}</span>
+            </div>
+          </div>
+
+          {/* Status */}
           <div>
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Status</label>
             <select value={status} onChange={e => setStatus(e.target.value as Purchase['status'])}
@@ -438,13 +721,20 @@ function EditPurchaseModal({ purchase, onClose, onSave }: {
             </div>
           )}
 
-          <div className="flex justify-end gap-3 pt-1">
-            <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg">Cancel</button>
-            <button onClick={handleSave} disabled={saving}
-              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50">
-              {saving ? 'Saving…' : 'Save Changes'}
-            </button>
+          {/* Notes */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Notes</label>
+            <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Delivery notes, batch numbers…"
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
           </div>
+        </div>
+
+        <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-800 flex justify-end gap-3 shrink-0">
+          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg">Cancel</button>
+          <button onClick={handleSave} disabled={saving || cart.length === 0}
+            className="px-5 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50 transition-colors">
+            {saving ? 'Saving…' : `Save Changes • ${fmt$(sgdTotal)}`}
+          </button>
         </div>
       </div>
     </div>
@@ -728,6 +1018,7 @@ function PurchasesContent() {
       {editingPurchase && (
         <EditPurchaseModal
           purchase={editingPurchase}
+          products={products}
           onClose={() => setEditingPurchase(null)}
           onSave={fetchData}
         />

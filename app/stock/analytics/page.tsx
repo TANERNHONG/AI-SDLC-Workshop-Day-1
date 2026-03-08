@@ -336,11 +336,11 @@ export default function AnalyticsPage() {
                 interval={Math.floor(lineDisplayData.length / 6)}
               />
               <YAxis
-                tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                tickFormatter={(v) => `$${Number(v).toLocaleString('en-SG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
                 tick={{ fontSize: 11, fill: '#9ca3af' }}
                 tickLine={false}
                 axisLine={false}
-                width={48}
+                width={64}
               />
               <Tooltip content={<CustomTooltip />} />
               <Legend
@@ -372,7 +372,7 @@ export default function AnalyticsPage() {
         )}
       </div>
 
-      {/* Bar Chart */}
+      {/* Bar Chart — Revenue */}
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5 shadow-sm">
         <h2 className="text-base font-bold text-gray-900 dark:text-white mb-1">Top Products by Revenue</h2>
         <p className="text-xs text-gray-400 mb-5">Top 10 products — last {selectedRange} days</p>
@@ -386,7 +386,7 @@ export default function AnalyticsPage() {
               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" className="dark:stroke-gray-800" />
               <XAxis
                 type="number"
-                tickFormatter={(v) => `$${v.toLocaleString()}`}
+                tickFormatter={(v) => `$${Number(v).toLocaleString('en-SG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
                 tick={{ fontSize: 11, fill: '#9ca3af' }}
                 tickLine={false}
                 axisLine={false}
@@ -400,13 +400,46 @@ export default function AnalyticsPage() {
                 width={130}
               />
               <Tooltip content={<CustomTooltip />} />
-              <Legend
-                iconType="square"
-                iconSize={8}
-                wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }}
-              />
               <Bar dataKey="revenue" name="Revenue" fill="#6366f1" radius={[0, 6, 6, 0]} />
-              <Bar dataKey="units"   name="Units Sold" fill="#a5b4fc" radius={[0, 6, 6, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* Bar Chart — Units Sold */}
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5 shadow-sm">
+        <h2 className="text-base font-bold text-gray-900 dark:text-white mb-1">Top Products by Units Sold</h2>
+        <p className="text-xs text-gray-400 mb-5">Top 10 products — last {selectedRange} days</p>
+        {loading ? (
+          <div className="h-64 flex items-center justify-center text-gray-400 text-sm">Loading chart…</div>
+        ) : barDisplayData.length === 0 ? (
+          <div className="h-64 flex items-center justify-center text-gray-400 text-sm">No sales data yet</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart
+              data={[...barDisplayData].sort((a, b) => b.units - a.units)}
+              layout="vertical"
+              margin={{ top: 0, right: 24, left: 8, bottom: 0 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" className="dark:stroke-gray-800" />
+              <XAxis
+                type="number"
+                tickFormatter={(v) => `${v}`}
+                tick={{ fontSize: 11, fill: '#9ca3af' }}
+                tickLine={false}
+                axisLine={false}
+                allowDecimals={false}
+              />
+              <YAxis
+                type="category"
+                dataKey="name"
+                tick={{ fontSize: 12, fill: '#6b7280' }}
+                tickLine={false}
+                axisLine={false}
+                width={130}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="units" name="Units Sold" fill="#10b981" radius={[0, 6, 6, 0]} />
             </BarChart>
           </ResponsiveContainer>
         )}
