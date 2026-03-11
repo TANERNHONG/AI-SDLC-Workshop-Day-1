@@ -13,11 +13,15 @@ export async function GET(request: NextRequest) {
 
   try {
     if (type === 'products') {
-      const data = saleDB.getProductSummary(startDate, endDate);
-      return NextResponse.json(data);
+      return NextResponse.json(saleDB.getProductSummary(startDate, endDate));
     }
-    const data = saleDB.getDailySummary(startDate, endDate);
-    return NextResponse.json(data);
+    if (type === 'margins') {
+      return NextResponse.json(saleDB.getProductMarginSummary(startDate, endDate));
+    }
+    if (type === 'categories') {
+      return NextResponse.json(saleDB.getCategoryRevenueSummary(startDate, endDate));
+    }
+    return NextResponse.json(saleDB.getDailySummary(startDate, endDate));
   } catch {
     return NextResponse.json({ error: 'Failed to fetch analytics' }, { status: 500 });
   }

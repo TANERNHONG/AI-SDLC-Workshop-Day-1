@@ -7,7 +7,12 @@ import {
   BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts';
-import type { DailySalesSummary, ProductSalesSummary } from '@/lib/stockdb';
+import type {
+  DailySalesSummary,
+  ProductSalesSummary,
+  ProductMarginSummary,
+  CategoryRevenueSummary,
+} from '@/lib/stockdb';
 
 function fmtCurrency(n: number) {
   return new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' }).format(n);
@@ -43,6 +48,22 @@ function fillDailyGaps(data: DailySalesSummary[], startDate: string, endDate: st
   return result;
 }
 
+function truncate(name: string, max = 22) {
+  return name.length > max ? name.slice(0, max - 1) + '…' : name;
+}
+
+function YAxisTick({ x, y, payload }: any) {
+  const display = truncate(payload.value, 22);
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <title>{payload.value}</title>
+      <text x={0} y={0} dy={4} textAnchor="end" fontSize={11} fill="#6b7280">
+        {display}
+      </text>
+    </g>
+  );
+}
+
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
@@ -53,7 +74,11 @@ const CustomTooltip = ({ active, payload, label }: any) => {
           <span className="w-2 h-2 rounded-full" style={{ background: p.color }} />
           <span className="text-gray-500 dark:text-gray-400">{p.name}:</span>
           <span className="font-semibold text-gray-800 dark:text-gray-100">
-            {p.dataKey === 'total' ? fmtCurrency(p.value) : p.value}
+            {p.dataKey === 'margin_pct'
+              ? `${Number(p.value).toFixed(1)}%`
+              : ['total', 'revenue', 'gross_profit'].includes(p.dataKey)
+              ? fmtCurrency(p.value)
+              : p.value}
           </span>
         </div>
       ))}
@@ -61,201 +86,194 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   );
 };
 
+function ChartCard({
+  title,
+  subtitle,
+  loading,
+  empty,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  loading: boolean;
+  empty: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5 shadow-sm">
+      <h2 className="text-base font-bold text-gray-900 dark:text-white mb-1">{title}</h2>
+      <p className="text-xs text-gray-400 mb-5">{subtitle}</p>
+      {loading ? (
+        <div className="h-[300px] flex items-center justify-center text-gray-400 text-sm">Loading chart…</div>
+      ) : empty ? (
+        <div className="h-[300px] flex items-center justify-center text-gray-400 text-sm">No sales data yet</div>
+      ) : (
+        children
+      )}
+    </div>
+  );
+}
+
 export default function AnalyticsPage() {
   const [selectedRange, setSelectedRange] = useState(30);
   const [dailyData, setDailyData] = useState<DailySalesSummary[]>([]);
-  const [productData, setProductData] = useState<ProductSalesSummary[]>([]);
+  const [revenueData, setRevenueData] = useState<ProductSalesSummary[]>([]);
+  const [marginData, setMarginData] = useState<ProductMarginSummary[]>([]);
+  const [categoryData, setCategoryData] = useState<CategoryRevenueSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     const { startDate, endDate } = getDateRange(selectedRange);
-    const [dailyRes, productRes] = await Promise.all([
+    const [dailyRes, productRes, marginRes, categoryRes] = await Promise.all([
       fetch(`/api/stock/analytics?type=daily&startDate=${startDate}&endDate=${endDate}`),
       fetch(`/api/stock/analytics?type=products&startDate=${startDate}&endDate=${endDate}`),
+      fetch(`/api/stock/analytics?type=margins&startDate=${startDate}&endDate=${endDate}`),
+      fetch(`/api/stock/analytics?type=categories&startDate=${startDate}&endDate=${endDate}`),
     ]);
-    const daily: DailySalesSummary[] = await dailyRes.json();
-    const products: ProductSalesSummary[] = await productRes.json();
+    const [daily, products, margins, categories] = await Promise.all([
+      dailyRes.json(),
+      productRes.json(),
+      marginRes.json(),
+      categoryRes.json(),
+    ]) as [DailySalesSummary[], ProductSalesSummary[], ProductMarginSummary[], CategoryRevenueSummary[]];
 
     setDailyData(fillDailyGaps(daily, startDate, endDate));
-    setProductData(products.slice(0, 10)); // top 10
+    setRevenueData(products.slice(0, 10));
+    setMarginData(margins.slice(0, 10));
+    setCategoryData(categories.slice(0, 10));
     setLoading(false);
   }, [selectedRange]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const { startDate, endDate } = getDateRange(selectedRange);
   const totalRevenue = dailyData.reduce((a, d) => a + d.total, 0);
   const totalOrders  = dailyData.reduce((a, d) => a + d.order_count, 0);
-  const peakDay = dailyData.reduce((a, d) => d.total > (a?.total ?? 0) ? d : a, dailyData[0]);
+  const peakDay      = dailyData.reduce<DailySalesSummary | null>((a, d) => d.total > (a?.total ?? 0) ? d : a, null);
 
   const lineDisplayData = dailyData.map((d) => ({
     ...d,
     date: new Date(d.date).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' }),
   }));
 
-  const barDisplayData = productData.map((p) => ({
-    name: p.product_name.length > 18 ? p.product_name.slice(0, 16) + '…' : p.product_name,
+  const revenueChartData = revenueData.map((p) => ({
+    name: p.product_name,
     revenue: p.total_revenue,
-    units: p.total_quantity,
   }));
 
-  // ── HTML Report Generator ──────────────────────────────────────────────────
+  const unitsChartData = [...revenueData]
+    .sort((a, b) => b.total_quantity - a.total_quantity)
+    .map((p) => ({
+      name: p.product_name,
+      units: p.total_quantity,
+    }));
+
+  const marginChartData = marginData.map((p) => ({
+    name: p.product_name,
+    margin_pct: parseFloat(p.margin_pct.toFixed(1)),
+    gross_profit: p.gross_profit,
+  }));
+
+  const categoryChartData = categoryData.map((c) => ({
+    name: c.category,
+    revenue: c.total_revenue,
+    products: c.product_count,
+  }));
+
+  // ─── HTML Report Generator ────────────────────────────────────────────────
 
   const generateReport = () => {
-    const { startDate, endDate } = getDateRange(selectedRange);
     const labels   = JSON.stringify(lineDisplayData.map(d => d.date));
     const revenues = JSON.stringify(lineDisplayData.map(d => d.total));
     const orders   = JSON.stringify(lineDisplayData.map(d => d.order_count));
-    const barNames = JSON.stringify(productData.map(p => p.product_name));
-    const barRevs  = JSON.stringify(productData.map(p => p.total_revenue));
 
-    const productRows = productData.map((p, i) => `
-      <tr class="${i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}">
-        <td class="px-4 py-2">${p.product_name}</td>
-        <td class="px-4 py-2 text-right">${p.total_quantity}</td>
-        <td class="px-4 py-2 text-right font-semibold text-indigo-700">${fmtCurrency(p.total_revenue)}</td>
+    const revenueRows = revenueData.map((p, i) => `
+      <tr class="${i % 2 === 0 ? 'even' : ''}">
+        <td>${i + 1}</td><td>${p.product_name}</td>
+        <td class="num">${p.total_quantity}</td>
+        <td class="num money">${fmtCurrency(p.total_revenue)}</td>
+      </tr>`).join('');
+
+    const marginRows = marginData.map((p, i) => `
+      <tr class="${i % 2 === 0 ? 'even' : ''}">
+        <td>${i + 1}</td><td>${p.product_name}</td>
+        <td class="num money">${fmtCurrency(p.total_revenue)}</td>
+        <td class="num money">${fmtCurrency(p.gross_profit)}</td>
+        <td class="num margin">${p.margin_pct.toFixed(1)}%</td>
+      </tr>`).join('');
+
+    const unitsRows = [...revenueData]
+      .sort((a, b) => b.total_quantity - a.total_quantity)
+      .map((p, i) => `
+      <tr class="${i % 2 === 0 ? 'even' : ''}">
+        <td>${i + 1}</td><td>${p.product_name}</td>
+        <td class="num">${p.total_quantity}</td>
+        <td class="num money">${fmtCurrency(p.total_revenue)}</td>
+      </tr>`).join('');
+
+    const categoryRows = categoryData.map((c, i) => `
+      <tr class="${i % 2 === 0 ? 'even' : ''}">
+        <td>${i + 1}</td><td>${c.category}</td>
+        <td class="num">${c.product_count}</td>
+        <td class="num">${c.total_quantity}</td>
+        <td class="num money">${fmtCurrency(c.total_revenue)}</td>
       </tr>`).join('');
 
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>StockCheck Analytics Report — ${selectedRange} Days</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1f2937; background: #f9fafb; padding: 32px; }
-    .header { margin-bottom: 32px; }
-    .header h1 { font-size: 28px; font-weight: 800; color: #111827; }
-    .header p  { font-size: 14px; color: #6b7280; margin-top: 4px; }
-    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
-    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px; }
-    .card-label { font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
-    .card-value { font-size: 26px; font-weight: 800; color: #111827; margin-top: 6px; }
-    .card-sub   { font-size: 12px; color: #9ca3af; margin-top: 4px; }
-    .section { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; margin-bottom: 24px; }
-    .section h2 { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
-    .chart-wrap { position: relative; height: 280px; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
-    th { text-align: left; padding: 10px 16px; font-size: 11px; font-weight: 600; text-transform: uppercase; color: #6b7280; border-bottom: 1px solid #e5e7eb; }
-    th:not(:first-child) { text-align: right; }
-    td { padding: 8px 16px; border-bottom: 1px solid #f3f4f6; }
-    td:not(:first-child) { text-align: right; }
-    .footer { text-align: center; font-size: 12px; color: #9ca3af; margin-top: 32px; }
-    @media print { body { background: white; padding: 20px; } .section { page-break-inside: avoid; } }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1f2937;background:#f9fafb;padding:32px}
+    h1{font-size:26px;font-weight:800;color:#111827}
+    .sub{font-size:13px;color:#6b7280;margin-top:4px;margin-bottom:28px}
+    .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:32px}
+    .card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px}
+    .clabel{font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:.05em}
+    .cval{font-size:24px;font-weight:800;color:#111827;margin-top:6px}
+    .csub{font-size:11px;color:#9ca3af;margin-top:3px}
+    .section{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:24px;margin-bottom:24px}
+    .section h2{font-size:15px;font-weight:700;margin-bottom:16px}
+    .chart-wrap{position:relative;height:260px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th{text-align:left;padding:9px 14px;font-size:11px;font-weight:600;text-transform:uppercase;color:#6b7280;border-bottom:1px solid #e5e7eb}
+    td{padding:8px 14px;border-bottom:1px solid #f3f4f6}
+    .num{text-align:right}.money{font-weight:600;color:#4f46e5}.margin{font-weight:600;color:#7c3aed}
+    tr.even td{background:#f9fafb}
+    .footer{text-align:center;font-size:12px;color:#9ca3af;margin-top:28px}
+    @media print{body{background:#fff;padding:16px}.section{page-break-inside:avoid}}
   </style>
 </head>
 <body>
-  <div class="header">
-    <h1>📊 StockCheck Analytics Report</h1>
-    <p>Period: ${startDate} to ${endDate} (${selectedRange} days) · Generated on ${new Date().toLocaleString('en-SG')}</p>
-  </div>
-
+  <h1>📊 StockCheck Analytics Report</h1>
+  <p class="sub">Period: ${startDate} → ${endDate} (${selectedRange} days) · Generated ${new Date().toLocaleString('en-SG')}</p>
   <div class="cards">
-    <div class="card">
-      <div class="card-label">Total Revenue</div>
-      <div class="card-value">${fmtCurrency(totalRevenue)}</div>
-      <div class="card-sub">Last ${selectedRange} days</div>
-    </div>
-    <div class="card">
-      <div class="card-label">Total Orders</div>
-      <div class="card-value">${totalOrders}</div>
-      <div class="card-sub">Last ${selectedRange} days</div>
-    </div>
-    <div class="card">
-      <div class="card-label">Peak Day Revenue</div>
-      <div class="card-value">${peakDay ? fmtCurrency(peakDay.total) : '—'}</div>
-      <div class="card-sub">${peakDay ? new Date(peakDay.date).toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}</div>
-    </div>
+    <div class="card"><div class="clabel">Total Revenue</div><div class="cval">${fmtCurrency(totalRevenue)}</div><div class="csub">Last ${selectedRange} days</div></div>
+    <div class="card"><div class="clabel">Total Orders</div><div class="cval">${totalOrders}</div><div class="csub">Last ${selectedRange} days</div></div>
+    <div class="card"><div class="clabel">Peak Day</div><div class="cval">${peakDay ? fmtCurrency(peakDay.total) : '—'}</div><div class="csub">${peakDay ? new Date(peakDay.date).toLocaleDateString('en-SG', { day: 'numeric', month: 'long', year: 'numeric' }) : ''}</div></div>
   </div>
-
-  <div class="section">
-    <h2>Daily Revenue Trend</h2>
-    <div class="chart-wrap"><canvas id="lineChart"></canvas></div>
-  </div>
-
-  <div class="section">
-    <h2>Top Products by Revenue</h2>
-    <div class="chart-wrap"><canvas id="barChart"></canvas></div>
-  </div>
-
-  <div class="section">
-    <h2>Top Products Table</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Product</th>
-          <th>Units Sold</th>
-          <th>Revenue</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${productRows}
-      </tbody>
-    </table>
-  </div>
-
-  <div class="footer">StockCheck v1.2 · Report generated ${new Date().toLocaleString('en-SG')}</div>
-
+  <div class="section"><h2>Daily Revenue Trend</h2><div class="chart-wrap"><canvas id="lineChart"></canvas></div></div>
+  <div class="section"><h2>Top 10 Products by Revenue</h2>
+    <table><thead><tr><th>#</th><th>Product</th><th class="num">Units Sold</th><th class="num">Revenue</th></tr></thead>
+    <tbody>${revenueRows}</tbody></table></div>
+  <div class="section"><h2>Top 10 Products by Units Sold</h2>
+    <table><thead><tr><th>#</th><th>Product</th><th class="num">Units Sold</th><th class="num">Revenue</th></tr></thead>
+    <tbody>${unitsRows}</tbody></table></div>
+  <div class="section"><h2>Top 10 Products by Highest Margin</h2>
+    <table><thead><tr><th>#</th><th>Product</th><th class="num">Revenue</th><th class="num">Gross Profit</th><th class="num">Margin %</th></tr></thead>
+    <tbody>${marginRows}</tbody></table></div>
+  <div class="section"><h2>Top Categories by Revenue</h2>
+    <table><thead><tr><th>#</th><th>Category</th><th class="num"># Products</th><th class="num">Units Sold</th><th class="num">Revenue</th></tr></thead>
+    <tbody>${categoryRows}</tbody></table></div>
+  <div class="footer">StockCheck · Report generated ${new Date().toLocaleString('en-SG')}</div>
   <script>
-    new Chart(document.getElementById('lineChart'), {
-      type: 'line',
-      data: {
-        labels: ${labels},
-        datasets: [{
-          label: 'Revenue (SGD)',
-          data: ${revenues},
-          borderColor: '#6366f1',
-          backgroundColor: 'rgba(99,102,241,0.08)',
-          borderWidth: 2.5,
-          pointRadius: 0,
-          tension: 0.3,
-          fill: true,
-        }, {
-          label: 'Orders',
-          data: ${orders},
-          borderColor: '#10b981',
-          backgroundColor: 'transparent',
-          borderWidth: 2,
-          pointRadius: 0,
-          tension: 0.3,
-          borderDash: [5, 3],
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { position: 'bottom' } },
-        scales: {
-          x: { grid: { display: false }, ticks: { maxTicksLimit: 8, font: { size: 11 } } },
-          y: { grid: { color: '#f3f4f6' }, ticks: { callback: v => '$' + Number(v).toLocaleString(), font: { size: 11 } } }
-        }
-      }
-    });
-    new Chart(document.getElementById('barChart'), {
-      type: 'bar',
-      data: {
-        labels: ${barNames},
-        datasets: [{
-          label: 'Revenue (SGD)',
-          data: ${barRevs},
-          backgroundColor: '#6366f1',
-          borderRadius: 6,
-        }]
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { callback: v => '$' + Number(v).toLocaleString(), font: { size: 11 } } },
-          y: { ticks: { font: { size: 11 } } }
-        }
-      }
-    });
+    new Chart(document.getElementById('lineChart'),{type:'line',data:{labels:${labels},datasets:[{label:'Revenue (SGD)',data:${revenues},borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,0.08)',borderWidth:2.5,pointRadius:0,tension:.3,fill:true},{label:'Orders',data:${orders},borderColor:'#10b981',backgroundColor:'transparent',borderWidth:2,pointRadius:0,tension:.3,borderDash:[5,3]}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}},scales:{x:{grid:{display:false},ticks:{maxTicksLimit:8,font:{size:11}}},y:{grid:{color:'#f3f4f6'},ticks:{callback:v=>'$'+Number(v).toLocaleString(),font:{size:11}}}}}});
   </script>
-</body>
-</html>`;
+</body></html>`;
 
     const blob = new Blob([html], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
@@ -263,13 +281,15 @@ export default function AnalyticsPage() {
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   };
 
+
+
   return (
     <div className="space-y-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Analytics</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Sales performance overview</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Sales &amp; product performance insights</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {/* Range Selector */}
@@ -302,14 +322,18 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
-      {/* Summary Cards */}
+      {/* Summary Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { label: 'Total Revenue', value: loading ? '—' : fmtCurrency(totalRevenue), sub: `Last ${selectedRange} days` },
-          { label: 'Total Orders',  value: loading ? '—' : totalOrders.toString(), sub: `Last ${selectedRange} days` },
-          { label: 'Peak Day',
-            value: loading ? '—' : (peakDay ? new Date(peakDay.date).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' }) : 'N/A'),
-            sub: peakDay ? fmtCurrency(peakDay.total) : '' },
+          { label: 'Total Orders',  value: loading ? '—' : totalOrders.toString(),    sub: `Last ${selectedRange} days` },
+          {
+            label: 'Peak Day',
+            value: loading ? '—' : peakDay
+              ? new Date(peakDay.date).toLocaleDateString('en-SG', { day: 'numeric', month: 'short' })
+              : 'N/A',
+            sub: peakDay ? fmtCurrency(peakDay.total) : '',
+          },
         ].map((c) => (
           <div key={c.label} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5 shadow-sm">
             <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">{c.label}</p>
@@ -319,9 +343,10 @@ export default function AnalyticsPage() {
         ))}
       </div>
 
-      {/* Line Chart */}
+      {/* Daily Revenue Trend */}
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5 shadow-sm">
-        <h2 className="text-base font-bold text-gray-900 dark:text-white mb-5">Daily Revenue</h2>
+        <h2 className="text-base font-bold text-gray-900 dark:text-white mb-1">Daily Revenue Trend</h2>
+        <p className="text-xs text-gray-400 mb-5">Revenue &amp; order volume · last {selectedRange} days</p>
         {loading ? (
           <div className="h-64 flex items-center justify-center text-gray-400 text-sm">Loading chart…</div>
         ) : (
@@ -343,46 +368,50 @@ export default function AnalyticsPage() {
                 width={64}
               />
               <Tooltip content={<CustomTooltip />} />
-              <Legend
-                iconType="circle"
-                iconSize={8}
-                wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }}
-              />
-              <Line
-                type="monotone"
-                dataKey="total"
-                name="Revenue"
-                stroke="#6366f1"
-                strokeWidth={2.5}
-                dot={false}
-                activeDot={{ r: 5, fill: '#6366f1' }}
-              />
-              <Line
-                type="monotone"
-                dataKey="order_count"
-                name="Orders"
-                stroke="#10b981"
-                strokeWidth={2}
-                dot={false}
-                strokeDasharray="5 3"
-                activeDot={{ r: 4, fill: '#10b981' }}
-              />
+              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
+              <Line type="monotone" dataKey="total" name="Revenue" stroke="#6366f1" strokeWidth={2.5} dot={false} activeDot={{ r: 5 }} />
+              <Line type="monotone" dataKey="order_count" name="Orders" stroke="#10b981" strokeWidth={2} dot={false} strokeDasharray="5 3" activeDot={{ r: 4 }} />
             </LineChart>
           </ResponsiveContainer>
         )}
       </div>
 
-      {/* Bar Chart — Revenue */}
-      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5 shadow-sm">
-        <h2 className="text-base font-bold text-gray-900 dark:text-white mb-1">Top Products by Revenue</h2>
-        <p className="text-xs text-gray-400 mb-5">Top 10 products — last {selectedRange} days</p>
-        {loading ? (
-          <div className="h-64 flex items-center justify-center text-gray-400 text-sm">Loading chart…</div>
-        ) : barDisplayData.length === 0 ? (
-          <div className="h-64 flex items-center justify-center text-gray-400 text-sm">No sales data yet</div>
-        ) : (
-          <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={barDisplayData} layout="vertical" margin={{ top: 0, right: 24, left: 8, bottom: 0 }}>
+      {/* Product Analysis — 2×2 grid */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+
+        {/* 1 — Top 10 by Highest Margin */}
+        <ChartCard
+          title="Top 10 by Highest Margin"
+          subtitle={`Best gross-margin % products · last ${selectedRange} days`}
+          loading={loading}
+          empty={marginChartData.length === 0}
+        >
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={marginChartData} layout="vertical" margin={{ top: 0, right: 32, left: 8, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" className="dark:stroke-gray-800" />
+              <XAxis
+                type="number"
+                tickFormatter={(v) => `${v}%`}
+                tick={{ fontSize: 11, fill: '#9ca3af' }}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis type="category" dataKey="name" tick={<YAxisTick />} tickLine={false} axisLine={false} width={140} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
+              <Bar dataKey="margin_pct" name="Margin %" fill="#8b5cf6" radius={[0, 6, 6, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        {/* 2 — Top 10 by Revenue */}
+        <ChartCard
+          title="Top 10 by Revenue"
+          subtitle={`Highest grossing products · last ${selectedRange} days`}
+          loading={loading}
+          empty={revenueChartData.length === 0}
+        >
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={revenueChartData} layout="vertical" margin={{ top: 0, right: 32, left: 8, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" className="dark:stroke-gray-800" />
               <XAxis
                 type="number"
@@ -391,58 +420,61 @@ export default function AnalyticsPage() {
                 tickLine={false}
                 axisLine={false}
               />
-              <YAxis
-                type="category"
-                dataKey="name"
-                tick={{ fontSize: 12, fill: '#6b7280' }}
-                tickLine={false}
-                axisLine={false}
-                width={130}
-              />
-              <Tooltip content={<CustomTooltip />} />
+              <YAxis type="category" dataKey="name" tick={<YAxisTick />} tickLine={false} axisLine={false} width={140} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
               <Bar dataKey="revenue" name="Revenue" fill="#6366f1" radius={[0, 6, 6, 0]} />
             </BarChart>
           </ResponsiveContainer>
-        )}
-      </div>
+        </ChartCard>
 
-      {/* Bar Chart — Units Sold */}
-      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5 shadow-sm">
-        <h2 className="text-base font-bold text-gray-900 dark:text-white mb-1">Top Products by Units Sold</h2>
-        <p className="text-xs text-gray-400 mb-5">Top 10 products — last {selectedRange} days</p>
-        {loading ? (
-          <div className="h-64 flex items-center justify-center text-gray-400 text-sm">Loading chart…</div>
-        ) : barDisplayData.length === 0 ? (
-          <div className="h-64 flex items-center justify-center text-gray-400 text-sm">No sales data yet</div>
-        ) : (
-          <ResponsiveContainer width="100%" height={320}>
-            <BarChart
-              data={[...barDisplayData].sort((a, b) => b.units - a.units)}
-              layout="vertical"
-              margin={{ top: 0, right: 24, left: 8, bottom: 0 }}
-            >
+        {/* 3 — Top 10 by Units Sold */}
+        <ChartCard
+          title="Top 10 by Units Sold"
+          subtitle={`Most popular products · last ${selectedRange} days`}
+          loading={loading}
+          empty={unitsChartData.length === 0}
+        >
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={unitsChartData} layout="vertical" margin={{ top: 0, right: 32, left: 8, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" className="dark:stroke-gray-800" />
               <XAxis
                 type="number"
-                tickFormatter={(v) => `${v}`}
                 tick={{ fontSize: 11, fill: '#9ca3af' }}
                 tickLine={false}
                 axisLine={false}
                 allowDecimals={false}
               />
-              <YAxis
-                type="category"
-                dataKey="name"
-                tick={{ fontSize: 12, fill: '#6b7280' }}
-                tickLine={false}
-                axisLine={false}
-                width={130}
-              />
-              <Tooltip content={<CustomTooltip />} />
+              <YAxis type="category" dataKey="name" tick={<YAxisTick />} tickLine={false} axisLine={false} width={140} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
               <Bar dataKey="units" name="Units Sold" fill="#10b981" radius={[0, 6, 6, 0]} />
             </BarChart>
           </ResponsiveContainer>
-        )}
+        </ChartCard>
+
+        {/* 4 — Top 10 Categories by Revenue */}
+        <ChartCard
+          title="Top Categories by Revenue"
+          subtitle={`Highest revenue product categories · last ${selectedRange} days`}
+          loading={loading}
+          empty={categoryChartData.length === 0}
+        >
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={categoryChartData} layout="vertical" margin={{ top: 0, right: 32, left: 8, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" className="dark:stroke-gray-800" />
+              <XAxis
+                type="number"
+                tickFormatter={(v) => `$${Number(v).toLocaleString('en-SG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`}
+                tick={{ fontSize: 11, fill: '#9ca3af' }}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis type="category" dataKey="name" tick={<YAxisTick />} tickLine={false} axisLine={false} width={140} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
+              <Bar dataKey="revenue" name="Revenue" fill="#f59e0b" radius={[0, 6, 6, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
       </div>
     </div>
   );

@@ -71,6 +71,23 @@ export interface ProductSalesSummary {
   total_revenue: number;
 }
 
+export interface ProductMarginSummary {
+  product_id: number;
+  product_name: string;
+  total_quantity: number;
+  total_revenue: number;
+  total_cost: number;
+  gross_profit: number;
+  margin_pct: number;
+}
+
+export interface CategoryRevenueSummary {
+  category: string;
+  total_revenue: number;
+  total_quantity: number;
+  product_count: number;
+}
+
 export interface Supplier {
   id: number;
   name: string;
@@ -651,6 +668,47 @@ export const saleDB = {
       GROUP BY si.product_id, si.product_name
       ORDER BY total_revenue DESC
     `).all(startDate, endDate + ' 23:59:59') as ProductSalesSummary[];
+  },
+
+  getProductMarginSummary(startDate: string, endDate: string): ProductMarginSummary[] {
+    return db.prepare(`
+      SELECT
+        si.product_id,
+        si.product_name,
+        SUM(si.quantity)                                AS total_quantity,
+        SUM(si.line_total)                              AS total_revenue,
+        SUM(si.unit_cost_sgd * si.quantity)             AS total_cost,
+        SUM(si.line_total) - SUM(si.unit_cost_sgd * si.quantity) AS gross_profit,
+        CASE WHEN SUM(si.line_total) > 0
+          THEN ((SUM(si.line_total) - SUM(si.unit_cost_sgd * si.quantity)) / SUM(si.line_total)) * 100
+          ELSE 0
+        END AS margin_pct
+      FROM sale_items si
+      INNER JOIN sales s ON s.id = si.sale_id
+      WHERE s.status = 'completed'
+        AND s.sale_date >= ?
+        AND s.sale_date <= ?
+      GROUP BY si.product_id, si.product_name
+      ORDER BY margin_pct DESC
+    `).all(startDate, endDate + ' 23:59:59') as ProductMarginSummary[];
+  },
+
+  getCategoryRevenueSummary(startDate: string, endDate: string): CategoryRevenueSummary[] {
+    return db.prepare(`
+      SELECT
+        COALESCE(p.category, 'Uncategorized') AS category,
+        SUM(si.line_total)                    AS total_revenue,
+        SUM(si.quantity)                      AS total_quantity,
+        COUNT(DISTINCT si.product_id)         AS product_count
+      FROM sale_items si
+      INNER JOIN sales s ON s.id = si.sale_id
+      LEFT JOIN products p ON p.id = si.product_id
+      WHERE s.status = 'completed'
+        AND s.sale_date >= ?
+        AND s.sale_date <= ?
+      GROUP BY COALESCE(p.category, 'Uncategorized')
+      ORDER BY total_revenue DESC
+    `).all(startDate, endDate + ' 23:59:59') as CategoryRevenueSummary[];
   },
 };
 
