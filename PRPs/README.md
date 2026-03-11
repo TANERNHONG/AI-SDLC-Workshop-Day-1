@@ -58,9 +58,29 @@ This directory contains detailed Product Requirement Prompts split by feature. E
     - Embeds Chart.js (CDN) bar/line chart data, top-products table, and summary stats
     - Opens in new browser tab; fully printable/saveable with inline CSS
 
+### Planned Features (v1.3 — 🔜 Planned 9 Mar 2026)
+
+11. **[11-shipping-orders.md](11-shipping-orders.md)** - Shipping Orders & Package Management
+    - Each Sale can optionally have one Shipping Order with status tracking (Not Prepared → Packed → Shipped → Received → Cancelled)
+    - A Shipping Order contains one or more Packages, each with Length, Width, Height (cm), Weight (kg), and optional Courier
+    - Supported couriers: uParcel, ezShip, SpeedPost, NinjaVan, Others
+    - System auto-recommends the cheapest courier per package based on dimensions/weight via courier rate tables
+    - User can manually override the courier selection (e.g. for proximity, convenience, delivery timing)
+
+12. **[12-courier-management.md](12-courier-management.md)** - Courier Rate Management & Auto-Recommendation
+    - Manage courier services with four configurable sub-tables per courier:
+      - **Rate Tables**: weight tier (kg) × dimension tier (L+W+H cm) → base price (SGD)
+      - **Bulk Savings**: order-count thresholds → percentage discount (e.g. 5–9 orders = 5% off)
+      - **Surcharges**: named add-on charges with price and description (e.g. area surcharge, night delivery, waiting time)
+      - **Additional Services**: optional value-added services with price and description
+    - Users can add, edit, and delete entries in each table
+    - Auto-recommendation engine: queries all couriers' rate tables for a given package's dimensions/weight, applies bulk savings from current month's order count, ranks cheapest-first
+    - Courier field on Package remains editable for manual override
+    - Seed data: uParcel with 7 rate tiers, 4 bulk-savings bands, 6 surcharge items
+
 ### Planned Features (v2.0)
 
-11. **[11-auth-roles.md](11-auth-roles.md)** - Role-Based Authentication
+13. **[13-auth-roles.md](13-auth-roles.md)** - Role-Based Authentication
     - Admin (full access) and Staff (sales + view-only) roles
     - Session management; protect all /stock routes behind login
 
@@ -132,7 +152,9 @@ Please help me implement this following the project patterns."
 02-sales-invoicing    → 08-sales-channel     (channel is a property of a sale)
 02-sales-invoicing    → 09-import-export     (export requires existing sales/purchases data)
 04-analytics          → 10-html-report       (report embeds analytics data)
-11-auth-roles         → all features         (auth wraps all /stock routes in v2.0)
+02-sales-invoicing    → 11-shipping-orders   (a shipping order is linked to an existing sale)
+11-shipping-orders    → 12-courier-management(courier rate tables power the auto-recommendation on packages)
+13-auth-roles         → all features         (auth wraps all /stock routes in v2.0)
 ```
 
 ## 📊 Implementation Priority
@@ -157,11 +179,15 @@ Recommended implementation order:
    - 09: Data Import & Export (Excel + JSON with templates and server-side validation)
    - 10: HTML Analytics Report (self-contained with embedded Chart.js)
 
-5. **Phase 5 — Scale & Security** 🔲 Planned (v2.0)
-   - 11: Role-Based Authentication
-   - 12: PostgreSQL Migration (replace SQLite for multi-user concurrency)
-   - 13: PWA / Offline Support
-   - 14: Barcode Scanner Integration
+5. **Phase 5 — Shipping & Logistics** 🔜 Planned (v1.3, 9 Mar 2026)
+   - 11: Shipping Orders & Package Management (per-sale shipping with multi-package support)
+   - 12: Courier Rate Management & Auto-Recommendation (rate tables, bulk savings, surcharges, seed uParcel data)
+
+6. **Phase 6 — Scale & Security** 🔲 Planned (v2.0)
+   - 13: Role-Based Authentication
+   - 14: PostgreSQL Migration (replace SQLite for multi-user concurrency)
+   - 15: PWA / Offline Support
+   - 16: Barcode Scanner Integration
 
 ## 🛠️ Technical Stack Reference
 
@@ -195,6 +221,6 @@ When adding new PRPs:
 
 ---
 
-**Last Updated**: 8 March 2026  
-**Total PRPs**: 11 (10 shipped · 1 infrastructure)  
-**Total Features Documented**: 11 across v1.0, v1.1, v1.2, and v2.0 
+**Last Updated**: 9 March 2026  
+**Total PRPs**: 13 (10 shipped · 2 planned v1.3 · 1 infrastructure)  
+**Total Features Documented**: 13 across v1.0, v1.1, v1.2, v1.3, and v2.0 

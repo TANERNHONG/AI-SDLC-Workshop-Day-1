@@ -1042,4 +1042,600 @@ export const stockEventDB = {
   },
 };
 
+// ─── Shipping & Courier Schema ───────────────────────────────────────────────
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS couriers (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT    NOT NULL UNIQUE,
+    slug        TEXT    NOT NULL UNIQUE,
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT    DEFAULT (datetime('now')),
+    updated_at  TEXT    DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS courier_rate_tables (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    courier_id            INTEGER NOT NULL,
+    max_weight_kg         REAL    NOT NULL,
+    max_length_cm         REAL    NOT NULL DEFAULT 0,
+    max_width_cm          REAL    NOT NULL DEFAULT 0,
+    max_height_cm         REAL    NOT NULL DEFAULT 0,
+    price                 REAL    NOT NULL,
+    FOREIGN KEY (courier_id) REFERENCES couriers(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS courier_bulk_savings (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    courier_id    INTEGER NOT NULL,
+    min_orders    INTEGER NOT NULL,
+    max_orders    INTEGER,
+    discount_pct  REAL    NOT NULL,
+    FOREIGN KEY (courier_id) REFERENCES couriers(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS courier_surcharges (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    courier_id  INTEGER NOT NULL,
+    item_name   TEXT    NOT NULL,
+    price       REAL    NOT NULL,
+    description TEXT,
+    FOREIGN KEY (courier_id) REFERENCES couriers(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS courier_additional_services (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    courier_id    INTEGER NOT NULL,
+    service_name  TEXT    NOT NULL,
+    price         REAL    NOT NULL,
+    description   TEXT,
+    FOREIGN KEY (courier_id) REFERENCES couriers(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS shipping_orders (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_id     INTEGER NOT NULL UNIQUE,
+    status      TEXT    NOT NULL DEFAULT 'not_prepared',
+    notes       TEXT,
+    created_at  TEXT    DEFAULT (datetime('now')),
+    updated_at  TEXT    DEFAULT (datetime('now')),
+    FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS packages (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    shipping_order_id   INTEGER NOT NULL,
+    length_cm           REAL    NOT NULL DEFAULT 0,
+    width_cm            REAL    NOT NULL DEFAULT 0,
+    height_cm           REAL    NOT NULL DEFAULT 0,
+    weight_kg           REAL    NOT NULL DEFAULT 0,
+    courier_id          INTEGER,
+    courier_name        TEXT,
+    estimated_cost      REAL,
+    notes               TEXT,
+    created_at          TEXT    DEFAULT (datetime('now')),
+    FOREIGN KEY (shipping_order_id) REFERENCES shipping_orders(id) ON DELETE CASCADE,
+    FOREIGN KEY (courier_id) REFERENCES couriers(id) ON DELETE SET NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_shipping_orders_sale ON shipping_orders(sale_id);
+  CREATE INDEX IF NOT EXISTS idx_packages_shipping    ON packages(shipping_order_id);
+  CREATE INDEX IF NOT EXISTS idx_rate_tables_courier   ON courier_rate_tables(courier_id);
+  CREATE INDEX IF NOT EXISTS idx_bulk_savings_courier  ON courier_bulk_savings(courier_id);
+  CREATE INDEX IF NOT EXISTS idx_surcharges_courier    ON courier_surcharges(courier_id);
+  CREATE INDEX IF NOT EXISTS idx_addl_services_courier ON courier_additional_services(courier_id);
+`);
+
+// ─── Seed uParcel courier ────────────────────────────────────────────────────
+
+(function seedCouriers() {
+  const existing = db.prepare("SELECT id FROM couriers WHERE slug = 'uparcel'").get();
+  if (existing) return; // already seeded
+
+  // Insert couriers
+  const couriersToSeed = [
+    { name: 'uParcel', slug: 'uparcel' },
+    { name: 'NinjaVan', slug: 'ninjavan' },
+    { name: 'Singapore Post', slug: 'singapore-post' },
+    { name: 'Others', slug: 'others' },
+  ];
+  const insertCourier = db.prepare("INSERT OR IGNORE INTO couriers (name, slug) VALUES (@name, @slug)");
+  for (const c of couriersToSeed) insertCourier.run(c);
+
+  const insertRate = db.prepare("INSERT INTO courier_rate_tables (courier_id, max_weight_kg, max_length_cm, max_width_cm, max_height_cm, price) VALUES (@courier_id, @max_weight_kg, @max_length_cm, @max_width_cm, @max_height_cm, @price)");
+
+  // ── uParcel rate tables ──
+  const uparcelId = (db.prepare("SELECT id FROM couriers WHERE slug = 'uparcel'").get() as any).id;
+  const uparcelRates = [
+    { max_weight_kg: 1,  max_length_cm: 30,  max_width_cm: 20, max_height_cm: 10, price: 10 },
+    { max_weight_kg: 5,  max_length_cm: 40,  max_width_cm: 25, max_height_cm: 15, price: 11 },
+    { max_weight_kg: 8,  max_length_cm: 50,  max_width_cm: 30, max_height_cm: 20, price: 13 },
+    { max_weight_kg: 10, max_length_cm: 60,  max_width_cm: 35, max_height_cm: 25, price: 16 },
+    { max_weight_kg: 15, max_length_cm: 70,  max_width_cm: 40, max_height_cm: 30, price: 18 },
+    { max_weight_kg: 20, max_length_cm: 80,  max_width_cm: 50, max_height_cm: 30, price: 21 },
+    { max_weight_kg: 25, max_length_cm: 100, max_width_cm: 60, max_height_cm: 40, price: 25 },
+  ];
+  for (const r of uparcelRates) insertRate.run({ courier_id: uparcelId, ...r });
+
+  // ── NinjaVan rate tables ──
+  const ninjavanId = (db.prepare("SELECT id FROM couriers WHERE slug = 'ninjavan'").get() as any).id;
+  const ninjavanRates = [
+    { max_weight_kg: 2,  max_length_cm: 30, max_width_cm: 30, max_height_cm: 20, price: 3.49 },
+    { max_weight_kg: 5,  max_length_cm: 40, max_width_cm: 40, max_height_cm: 30, price: 4.49 },
+    { max_weight_kg: 10, max_length_cm: 50, max_width_cm: 50, max_height_cm: 40, price: 5.99 },
+    { max_weight_kg: 20, max_length_cm: 60, max_width_cm: 60, max_height_cm: 50, price: 8.99 },
+    { max_weight_kg: 30, max_length_cm: 70, max_width_cm: 70, max_height_cm: 60, price: 14.99 },
+  ];
+  for (const r of ninjavanRates) insertRate.run({ courier_id: ninjavanId, ...r });
+
+  // ── Singapore Post rate tables ──
+  const singpostId = (db.prepare("SELECT id FROM couriers WHERE slug = 'singapore-post'").get() as any).id;
+  const singpostRates = [
+    { max_weight_kg: 2, max_length_cm: 32.4, max_width_cm: 22.9, max_height_cm: 0.65, price: 2.00 },
+  ];
+  for (const r of singpostRates) insertRate.run({ courier_id: singpostId, ...r });
+
+  // ── uParcel bulk savings ──
+  const bulks = [
+    { min_orders: 5,  max_orders: 9,    discount_pct: 5 },
+    { min_orders: 10, max_orders: 19,   discount_pct: 10 },
+    { min_orders: 20, max_orders: 29,   discount_pct: 15 },
+    { min_orders: 30, max_orders: null,  discount_pct: 20 },
+  ];
+  const insertBulk = db.prepare("INSERT INTO courier_bulk_savings (courier_id, min_orders, max_orders, discount_pct) VALUES (@courier_id, @min_orders, @max_orders, @discount_pct)");
+  for (const b of bulks) insertBulk.run({ courier_id: uparcelId, ...b });
+
+  // ── uParcel surcharges ──
+  const surcharges = [
+    { item_name: 'Area: City',      price: 2,    description: '' },
+    { item_name: 'Area: Tuas',      price: 4,    description: '' },
+    { item_name: 'Area: Changi',    price: 15,   description: '' },
+    { item_name: 'Entry Fee',       price: 10,   description: '' },
+    { item_name: 'Distance',        price: 2,    description: 'Trips exceeding 18 km' },
+    { item_name: 'Night Delivery',  price: 15,   description: 'Bookings made from 11 pm to 7 am. Only 1 hour rush available' },
+    { item_name: 'Waiting Time',    price: 0.40, description: '$0.40/min — any time beyond 10 minutes of waiting' },
+  ];
+  const insertSurcharge = db.prepare("INSERT INTO courier_surcharges (courier_id, item_name, price, description) VALUES (@courier_id, @item_name, @price, @description)");
+  for (const s of surcharges) insertSurcharge.run({ courier_id: uparcelId, ...s });
+})();
+
+// ─── Courier Types ───────────────────────────────────────────────────────────
+
+export interface Courier {
+  id: number;
+  name: string;
+  slug: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CourierRateTable {
+  id: number;
+  courier_id: number;
+  max_weight_kg: number;
+  max_length_cm: number;
+  max_width_cm: number;
+  max_height_cm: number;
+  price: number;
+}
+
+export interface CourierBulkSaving {
+  id: number;
+  courier_id: number;
+  min_orders: number;
+  max_orders: number | null;
+  discount_pct: number;
+}
+
+export interface CourierSurcharge {
+  id: number;
+  courier_id: number;
+  item_name: string;
+  price: number;
+  description: string | null;
+}
+
+export interface CourierAdditionalService {
+  id: number;
+  courier_id: number;
+  service_name: string;
+  price: number;
+  description: string | null;
+}
+
+export type ShippingStatus = 'not_prepared' | 'packed' | 'shipped' | 'received' | 'cancelled';
+
+export interface ShippingOrder {
+  id: number;
+  sale_id: number;
+  status: ShippingStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Package {
+  id: number;
+  shipping_order_id: number;
+  length_cm: number;
+  width_cm: number;
+  height_cm: number;
+  weight_kg: number;
+  courier_id: number | null;
+  courier_name: string | null;
+  estimated_cost: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface ShippingOrderWithPackages extends ShippingOrder {
+  packages: Package[];
+  invoice_number?: string;
+}
+
+export interface CourierQuote {
+  courier_id: number;
+  courier_name: string;
+  base_price: number;
+  bulk_discount_pct: number;
+  discounted_price: number;
+  fits: boolean;
+}
+
+// ─── Courier DB ──────────────────────────────────────────────────────────────
+
+export const courierDB = {
+  list(includeInactive = false): Courier[] {
+    const rows = db.prepare(
+      includeInactive
+        ? 'SELECT * FROM couriers ORDER BY name ASC'
+        : 'SELECT * FROM couriers WHERE is_active = 1 ORDER BY name ASC'
+    ).all() as any[];
+    return rows.map(r => ({ ...r, is_active: Boolean(r.is_active) }));
+  },
+
+  getById(id: number): Courier | undefined {
+    const row = db.prepare('SELECT * FROM couriers WHERE id = ?').get(id) as any;
+    return row ? { ...row, is_active: Boolean(row.is_active) } : undefined;
+  },
+
+  create(data: { name: string; slug: string }): Courier {
+    const result = db.prepare("INSERT INTO couriers (name, slug) VALUES (@name, @slug)").run(data);
+    return courierDB.getById(Number(result.lastInsertRowid))!;
+  },
+
+  update(id: number, data: { name?: string; slug?: string; is_active?: boolean }): Courier | undefined {
+    const allowed = ['name', 'slug', 'is_active'];
+    const entries = Object.entries(data).filter(([k]) => allowed.includes(k));
+    if (entries.length === 0) return courierDB.getById(id);
+    const sets = entries.map(([k]) => `${k} = @${k}`).join(', ');
+    const params: any = Object.fromEntries(entries.map(([k, v]) => [k, typeof v === 'boolean' ? (v ? 1 : 0) : v]));
+    params.id = id;
+    db.prepare(`UPDATE couriers SET ${sets}, updated_at = datetime('now') WHERE id = @id`).run(params);
+    return courierDB.getById(id);
+  },
+
+  delete(id: number): void {
+    db.prepare('DELETE FROM couriers WHERE id = ?').run(id);
+  },
+
+  // ─── Rate Tables ───
+  getRateTables(courierId: number): CourierRateTable[] {
+    return db.prepare('SELECT * FROM courier_rate_tables WHERE courier_id = ? ORDER BY max_weight_kg ASC').all(courierId) as CourierRateTable[];
+  },
+  addRateTable(data: { courier_id: number; max_weight_kg: number; max_length_cm: number; max_width_cm: number; max_height_cm: number; price: number }): CourierRateTable {
+    const result = db.prepare("INSERT INTO courier_rate_tables (courier_id, max_weight_kg, max_length_cm, max_width_cm, max_height_cm, price) VALUES (@courier_id, @max_weight_kg, @max_length_cm, @max_width_cm, @max_height_cm, @price)").run(data);
+    return db.prepare('SELECT * FROM courier_rate_tables WHERE id = ?').get(Number(result.lastInsertRowid)) as CourierRateTable;
+  },
+  updateRateTable(id: number, data: { max_weight_kg?: number; max_length_cm?: number; max_width_cm?: number; max_height_cm?: number; price?: number }): CourierRateTable | undefined {
+    const entries = Object.entries(data).filter(([, v]) => v !== undefined);
+    if (entries.length === 0) return db.prepare('SELECT * FROM courier_rate_tables WHERE id = ?').get(id) as CourierRateTable | undefined;
+    const sets = entries.map(([k]) => `${k} = @${k}`).join(', ');
+    const params: any = Object.fromEntries(entries);
+    params.id = id;
+    db.prepare(`UPDATE courier_rate_tables SET ${sets} WHERE id = @id`).run(params);
+    return db.prepare('SELECT * FROM courier_rate_tables WHERE id = ?').get(id) as CourierRateTable | undefined;
+  },
+  deleteRateTable(id: number): void {
+    db.prepare('DELETE FROM courier_rate_tables WHERE id = ?').run(id);
+  },
+
+  // ─── Bulk Savings ───
+  getBulkSavings(courierId: number): CourierBulkSaving[] {
+    return db.prepare('SELECT * FROM courier_bulk_savings WHERE courier_id = ? ORDER BY min_orders ASC').all(courierId) as CourierBulkSaving[];
+  },
+  addBulkSaving(data: { courier_id: number; min_orders: number; max_orders: number | null; discount_pct: number }): CourierBulkSaving {
+    const result = db.prepare("INSERT INTO courier_bulk_savings (courier_id, min_orders, max_orders, discount_pct) VALUES (@courier_id, @min_orders, @max_orders, @discount_pct)").run(data);
+    return db.prepare('SELECT * FROM courier_bulk_savings WHERE id = ?').get(Number(result.lastInsertRowid)) as CourierBulkSaving;
+  },
+  updateBulkSaving(id: number, data: { min_orders?: number; max_orders?: number | null; discount_pct?: number }): CourierBulkSaving | undefined {
+    const entries = Object.entries(data).filter(([, v]) => v !== undefined);
+    if (entries.length === 0) return db.prepare('SELECT * FROM courier_bulk_savings WHERE id = ?').get(id) as CourierBulkSaving | undefined;
+    const sets = entries.map(([k]) => `${k} = @${k}`).join(', ');
+    const params: any = Object.fromEntries(entries);
+    params.id = id;
+    db.prepare(`UPDATE courier_bulk_savings SET ${sets} WHERE id = @id`).run(params);
+    return db.prepare('SELECT * FROM courier_bulk_savings WHERE id = ?').get(id) as CourierBulkSaving | undefined;
+  },
+  deleteBulkSaving(id: number): void {
+    db.prepare('DELETE FROM courier_bulk_savings WHERE id = ?').run(id);
+  },
+
+  // ─── Surcharges ───
+  getSurcharges(courierId: number): CourierSurcharge[] {
+    return db.prepare('SELECT * FROM courier_surcharges WHERE courier_id = ? ORDER BY item_name ASC').all(courierId) as CourierSurcharge[];
+  },
+  addSurcharge(data: { courier_id: number; item_name: string; price: number; description?: string }): CourierSurcharge {
+    const result = db.prepare("INSERT INTO courier_surcharges (courier_id, item_name, price, description) VALUES (@courier_id, @item_name, @price, @description)").run({ ...data, description: data.description ?? null });
+    return db.prepare('SELECT * FROM courier_surcharges WHERE id = ?').get(Number(result.lastInsertRowid)) as CourierSurcharge;
+  },
+  updateSurcharge(id: number, data: { item_name?: string; price?: number; description?: string }): CourierSurcharge | undefined {
+    const entries = Object.entries(data).filter(([, v]) => v !== undefined);
+    if (entries.length === 0) return db.prepare('SELECT * FROM courier_surcharges WHERE id = ?').get(id) as CourierSurcharge | undefined;
+    const sets = entries.map(([k]) => `${k} = @${k}`).join(', ');
+    const params: any = Object.fromEntries(entries);
+    params.id = id;
+    db.prepare(`UPDATE courier_surcharges SET ${sets} WHERE id = @id`).run(params);
+    return db.prepare('SELECT * FROM courier_surcharges WHERE id = ?').get(id) as CourierSurcharge | undefined;
+  },
+  deleteSurcharge(id: number): void {
+    db.prepare('DELETE FROM courier_surcharges WHERE id = ?').run(id);
+  },
+
+  // ─── Additional Services ───
+  getAdditionalServices(courierId: number): CourierAdditionalService[] {
+    return db.prepare('SELECT * FROM courier_additional_services WHERE courier_id = ? ORDER BY service_name ASC').all(courierId) as CourierAdditionalService[];
+  },
+  addAdditionalService(data: { courier_id: number; service_name: string; price: number; description?: string }): CourierAdditionalService {
+    const result = db.prepare("INSERT INTO courier_additional_services (courier_id, service_name, price, description) VALUES (@courier_id, @service_name, @price, @description)").run({ ...data, description: data.description ?? null });
+    return db.prepare('SELECT * FROM courier_additional_services WHERE id = ?').get(Number(result.lastInsertRowid)) as CourierAdditionalService;
+  },
+  updateAdditionalService(id: number, data: { service_name?: string; price?: number; description?: string }): CourierAdditionalService | undefined {
+    const entries = Object.entries(data).filter(([, v]) => v !== undefined);
+    if (entries.length === 0) return db.prepare('SELECT * FROM courier_additional_services WHERE id = ?').get(id) as CourierAdditionalService | undefined;
+    const sets = entries.map(([k]) => `${k} = @${k}`).join(', ');
+    const params: any = Object.fromEntries(entries);
+    params.id = id;
+    db.prepare(`UPDATE courier_additional_services SET ${sets} WHERE id = @id`).run(params);
+    return db.prepare('SELECT * FROM courier_additional_services WHERE id = ?').get(id) as CourierAdditionalService | undefined;
+  },
+  deleteAdditionalService(id: number): void {
+    db.prepare('DELETE FROM courier_additional_services WHERE id = ?').run(id);
+  },
+
+  // ─── Auto-Recommendation ───
+  /** Get quotes for a package from all active couriers. Returns sorted cheapest-first. */
+  getQuotes(weightKg: number, lengthCm: number, widthCm: number, heightCm: number): CourierQuote[] {
+    const couriers = courierDB.list();
+
+    // Count shipped orders this month for bulk discount calc
+    const now = new Date();
+    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    const monthEnd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-31 23:59:59`;
+    const monthlyOrders = (db.prepare(`
+      SELECT COUNT(*) AS cnt FROM shipping_orders
+      WHERE status IN ('shipped', 'received')
+        AND created_at >= ? AND created_at <= ?
+    `).get(monthStart, monthEnd) as any).cnt;
+
+    const quotes: CourierQuote[] = [];
+
+    for (const courier of couriers) {
+      // Find cheapest tier that fits — check each dimension individually
+      const tier = db.prepare(`
+        SELECT * FROM courier_rate_tables
+        WHERE courier_id = ? AND max_weight_kg >= ? AND max_length_cm >= ? AND max_width_cm >= ? AND max_height_cm >= ?
+        ORDER BY price ASC LIMIT 1
+      `).get(courier.id, weightKg, lengthCm, widthCm, heightCm) as CourierRateTable | undefined;
+
+      const fits = !!tier;
+      const basePrice = tier?.price ?? 0;
+
+      // Find applicable bulk discount
+      const bulk = db.prepare(`
+        SELECT * FROM courier_bulk_savings
+        WHERE courier_id = ? AND min_orders <= ?
+          AND (max_orders IS NULL OR max_orders >= ?)
+        ORDER BY discount_pct DESC LIMIT 1
+      `).get(courier.id, monthlyOrders, monthlyOrders) as CourierBulkSaving | undefined;
+
+      const discountPct = bulk?.discount_pct ?? 0;
+      const discountedPrice = basePrice * (1 - discountPct / 100);
+
+      quotes.push({
+        courier_id: courier.id,
+        courier_name: courier.name,
+        base_price: basePrice,
+        bulk_discount_pct: discountPct,
+        discounted_price: Math.round(discountedPrice * 100) / 100,
+        fits,
+      });
+    }
+
+    // Sort: fitting couriers first (cheapest), then non-fitting
+    quotes.sort((a, b) => {
+      if (a.fits && !b.fits) return -1;
+      if (!a.fits && b.fits) return 1;
+      return a.discounted_price - b.discounted_price;
+    });
+
+    return quotes;
+  },
+};
+
+// ─── Shipping Order DB ───────────────────────────────────────────────────────
+
+export const shippingOrderDB = {
+  create(data: { sale_id: number; status?: ShippingStatus; notes?: string }): ShippingOrderWithPackages {
+    const result = db.prepare(
+      "INSERT INTO shipping_orders (sale_id, status, notes) VALUES (@sale_id, @status, @notes)"
+    ).run({
+      sale_id: data.sale_id,
+      status: data.status ?? 'not_prepared',
+      notes: data.notes ?? null,
+    });
+    return shippingOrderDB.getById(Number(result.lastInsertRowid))!;
+  },
+
+  getById(id: number): ShippingOrderWithPackages | undefined {
+    const row = db.prepare(`
+      SELECT so.*, s.invoice_number
+      FROM shipping_orders so
+      LEFT JOIN sales s ON s.id = so.sale_id
+      WHERE so.id = ?
+    `).get(id) as any;
+    if (!row) return undefined;
+    const packages = db.prepare('SELECT * FROM packages WHERE shipping_order_id = ? ORDER BY id ASC').all(id) as Package[];
+    return { ...row, packages };
+  },
+
+  getBySaleId(saleId: number): ShippingOrderWithPackages | undefined {
+    const row = db.prepare(`
+      SELECT so.*, s.invoice_number
+      FROM shipping_orders so
+      LEFT JOIN sales s ON s.id = so.sale_id
+      WHERE so.sale_id = ?
+    `).get(saleId) as any;
+    if (!row) return undefined;
+    const packages = db.prepare('SELECT * FROM packages WHERE shipping_order_id = ? ORDER BY id ASC').all(row.id) as Package[];
+    return { ...row, packages };
+  },
+
+  list(opts: { status?: string } = {}): ShippingOrderWithPackages[] {
+    let query = `
+      SELECT so.*, s.invoice_number
+      FROM shipping_orders so
+      LEFT JOIN sales s ON s.id = so.sale_id
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+    if (opts.status && opts.status !== 'all') {
+      query += ' AND so.status = ?';
+      params.push(opts.status);
+    }
+    query += ' ORDER BY so.created_at DESC, so.id DESC';
+    const rows = db.prepare(query).all(...params) as any[];
+    return rows.map(row => {
+      const packages = db.prepare('SELECT * FROM packages WHERE shipping_order_id = ? ORDER BY id ASC').all(row.id) as Package[];
+      return { ...row, packages };
+    });
+  },
+
+  update(id: number, data: { status?: ShippingStatus; notes?: string }): ShippingOrderWithPackages | undefined {
+    const existing = shippingOrderDB.getById(id);
+    if (!existing) return undefined;
+    const entries = Object.entries(data).filter(([, v]) => v !== undefined);
+    if (entries.length === 0) return existing;
+    const sets = entries.map(([k]) => `${k} = @${k}`).join(', ');
+    const params: any = Object.fromEntries(entries);
+    params.id = id;
+    db.prepare(`UPDATE shipping_orders SET ${sets}, updated_at = datetime('now') WHERE id = @id`).run(params);
+    return shippingOrderDB.getById(id);
+  },
+
+  delete(id: number): void {
+    db.prepare('DELETE FROM shipping_orders WHERE id = ?').run(id);
+  },
+
+  // ─── Package management ───
+  addPackage(data: { shipping_order_id: number; length_cm: number; width_cm: number; height_cm: number; weight_kg: number; courier_id?: number; notes?: string }): Package {
+    let courierName: string | null = null;
+    let estimatedCost: number | null = null;
+
+    if (data.courier_id) {
+      const c = courierDB.getById(data.courier_id);
+      courierName = c?.name ?? null;
+    }
+
+    // Auto-recommend if no courier specified
+    if (!data.courier_id && data.weight_kg > 0) {
+      const quotes = courierDB.getQuotes(data.weight_kg, data.length_cm, data.width_cm, data.height_cm);
+      const best = quotes.find(q => q.fits);
+      if (best) {
+        data.courier_id = best.courier_id;
+        courierName = best.courier_name;
+        estimatedCost = best.discounted_price;
+      }
+    } else if (data.courier_id && data.weight_kg > 0) {
+      const quotes = courierDB.getQuotes(data.weight_kg, data.length_cm, data.width_cm, data.height_cm);
+      const match = quotes.find(q => q.courier_id === data.courier_id);
+      if (match) estimatedCost = match.discounted_price;
+    }
+
+    const result = db.prepare(`
+      INSERT INTO packages (shipping_order_id, length_cm, width_cm, height_cm, weight_kg, courier_id, courier_name, estimated_cost, notes)
+      VALUES (@shipping_order_id, @length_cm, @width_cm, @height_cm, @weight_kg, @courier_id, @courier_name, @estimated_cost, @notes)
+    `).run({
+      shipping_order_id: data.shipping_order_id,
+      length_cm: data.length_cm,
+      width_cm: data.width_cm,
+      height_cm: data.height_cm,
+      weight_kg: data.weight_kg,
+      courier_id: data.courier_id ?? null,
+      courier_name: courierName,
+      estimated_cost: estimatedCost,
+      notes: data.notes ?? null,
+    });
+    return db.prepare('SELECT * FROM packages WHERE id = ?').get(Number(result.lastInsertRowid)) as Package;
+  },
+
+  updatePackage(id: number, data: { length_cm?: number; width_cm?: number; height_cm?: number; weight_kg?: number; courier_id?: number | null; notes?: string }): Package | undefined {
+    const existing = db.prepare('SELECT * FROM packages WHERE id = ?').get(id) as Package | undefined;
+    if (!existing) return undefined;
+
+    const length_cm = data.length_cm ?? existing.length_cm;
+    const width_cm = data.width_cm ?? existing.width_cm;
+    const height_cm = data.height_cm ?? existing.height_cm;
+    const weight_kg = data.weight_kg ?? existing.weight_kg;
+    let courier_id = data.courier_id !== undefined ? data.courier_id : existing.courier_id;
+    let courier_name: string | null = existing.courier_name;
+    let estimated_cost: number | null = existing.estimated_cost;
+
+    // Re-run auto-recommendation if dimensions changed and no courier override
+    if (data.courier_id === undefined && weight_kg > 0) {
+      const quotes = courierDB.getQuotes(weight_kg, length_cm, width_cm, height_cm);
+      const best = quotes.find(q => q.fits);
+      if (best) {
+        courier_id = best.courier_id;
+        courier_name = best.courier_name;
+        estimated_cost = best.discounted_price;
+      }
+    } else if (courier_id) {
+      const c = courierDB.getById(courier_id);
+      courier_name = c?.name ?? null;
+      if (weight_kg > 0) {
+        const quotes = courierDB.getQuotes(weight_kg, length_cm, width_cm, height_cm);
+        const match = quotes.find(q => q.courier_id === courier_id);
+        estimated_cost = match?.discounted_price ?? null;
+      }
+    } else {
+      courier_name = null;
+      estimated_cost = null;
+    }
+
+    db.prepare(`
+      UPDATE packages SET length_cm=@length_cm, width_cm=@width_cm, height_cm=@height_cm,
+        weight_kg=@weight_kg, courier_id=@courier_id, courier_name=@courier_name,
+        estimated_cost=@estimated_cost, notes=@notes
+      WHERE id=@id
+    `).run({
+      id, length_cm, width_cm, height_cm, weight_kg,
+      courier_id: courier_id ?? null,
+      courier_name,
+      estimated_cost,
+      notes: data.notes !== undefined ? data.notes : existing.notes,
+    });
+    return db.prepare('SELECT * FROM packages WHERE id = ?').get(id) as Package;
+  },
+
+  deletePackage(id: number): void {
+    db.prepare('DELETE FROM packages WHERE id = ?').run(id);
+  },
+
+  getPackage(id: number): Package | undefined {
+    return db.prepare('SELECT * FROM packages WHERE id = ?').get(id) as Package | undefined;
+  },
+};
+
 export default db;
