@@ -450,6 +450,7 @@ function ProductsContent() {
                 <th className="text-right px-3 py-3.5 font-medium">Price</th>
                 <th className="text-right px-3 py-3.5 font-medium hidden sm:table-cell">Margin</th>
                 <th className="text-right px-3 py-3.5 font-medium">Stock</th>
+                <th className="text-right px-3 py-3.5 font-medium">Incoming</th>
                 <th className="text-center px-3 py-3.5 font-medium">Status</th>
                 <th className="px-5 py-3.5 font-medium"></th>
               </tr>
@@ -487,6 +488,15 @@ function ProductsContent() {
                       <span className={`font-semibold tabular-nums ${product.stock_quantity <= 5 ? 'text-red-600 dark:text-red-400' : product.stock_quantity <= 20 ? 'text-amber-600 dark:text-amber-400' : 'text-gray-700 dark:text-gray-300'}`}>
                         {product.stock_quantity}
                       </span>
+                    </td>
+                    <td className="px-3 py-3.5 text-right">
+                      {(product as any).pending_stock > 0 ? (
+                        <span className="font-semibold tabular-nums text-blue-600 dark:text-blue-400">
+                          +{(product as any).pending_stock}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300 dark:text-gray-600">—</span>
+                      )}
                     </td>
                     <td className="px-3 py-3.5 text-center">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${product.is_active ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'}`}>

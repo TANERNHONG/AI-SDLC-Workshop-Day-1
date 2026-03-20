@@ -12,6 +12,7 @@ import type {
   ProductSalesSummary,
   ProductMarginSummary,
   CategoryRevenueSummary,
+  BurnRateROP,
 } from '@/lib/stockdb';
 
 function fmtCurrency(n: number) {
@@ -120,30 +121,35 @@ export default function AnalyticsPage() {
   const [revenueData, setRevenueData] = useState<ProductSalesSummary[]>([]);
   const [marginData, setMarginData] = useState<ProductMarginSummary[]>([]);
   const [categoryData, setCategoryData] = useState<CategoryRevenueSummary[]>([]);
+  const [burnRateData, setBurnRateData] = useState<BurnRateROP[]>([]);
+  const [leadTime, setLeadTime] = useState(7);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     const { startDate, endDate } = getDateRange(selectedRange);
-    const [dailyRes, productRes, marginRes, categoryRes] = await Promise.all([
+    const [dailyRes, productRes, marginRes, categoryRes, burnRateRes] = await Promise.all([
       fetch(`/api/stock/analytics?type=daily&startDate=${startDate}&endDate=${endDate}`),
       fetch(`/api/stock/analytics?type=products&startDate=${startDate}&endDate=${endDate}`),
       fetch(`/api/stock/analytics?type=margins&startDate=${startDate}&endDate=${endDate}`),
       fetch(`/api/stock/analytics?type=categories&startDate=${startDate}&endDate=${endDate}`),
+      fetch(`/api/stock/analytics?type=burnrate&startDate=${startDate}&endDate=${endDate}&leadTime=${leadTime}`),
     ]);
-    const [daily, products, margins, categories] = await Promise.all([
+    const [daily, products, margins, categories, burnRate] = await Promise.all([
       dailyRes.json(),
       productRes.json(),
       marginRes.json(),
       categoryRes.json(),
-    ]) as [DailySalesSummary[], ProductSalesSummary[], ProductMarginSummary[], CategoryRevenueSummary[]];
+      burnRateRes.json(),
+    ]) as [DailySalesSummary[], ProductSalesSummary[], ProductMarginSummary[], CategoryRevenueSummary[], BurnRateROP[]];
 
     setDailyData(fillDailyGaps(daily, startDate, endDate));
     setRevenueData(products.slice(0, 10));
     setMarginData(margins.slice(0, 10));
     setCategoryData(categories.slice(0, 10));
+    setBurnRateData(burnRate);
     setLoading(false);
-  }, [selectedRange]);
+  }, [selectedRange, leadTime]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -475,6 +481,156 @@ export default function AnalyticsPage() {
           </ResponsiveContainer>
         </ChartCard>
 
+      </div>
+
+      {/* ─── Burn Rate & Reorder Point Alert ─────────────────────────────── */}
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-5 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+          <div>
+            <h2 className="text-base font-bold text-gray-900 dark:text-white">Reorder Point Alerts</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Stockout-adjusted burn rate &amp; ROP · last {selectedRange} days
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <label htmlFor="leadTime" className="text-xs font-medium text-gray-500 dark:text-gray-400 whitespace-nowrap">
+              Lead time
+            </label>
+            <select
+              id="leadTime"
+              value={leadTime}
+              onChange={(e) => setLeadTime(Number(e.target.value))}
+              className="border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            >
+              {[3, 5, 7, 10, 14, 21, 30].map((d) => (
+                <option key={d} value={d}>{d} days</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="h-40 flex items-center justify-center text-gray-400 text-sm">Loading…</div>
+        ) : burnRateData.length === 0 ? (
+          <div className="h-40 flex items-center justify-center text-gray-400 text-sm">No sales data to compute burn rates</div>
+        ) : (
+          <>
+            {/* Alert banner */}
+            {burnRateData.some((p) => p.needs_reorder) && (
+              <div className="mb-4 flex items-start gap-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3">
+                <svg className="w-5 h-5 text-red-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <p className="text-sm font-semibold text-red-800 dark:text-red-300">
+                    {burnRateData.filter((p) => p.needs_reorder).length} product{burnRateData.filter((p) => p.needs_reorder).length > 1 ? 's' : ''} below reorder point
+                  </p>
+                  <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">
+                    Stock is at or below the level needed to cover {leadTime}-day lead time based on adjusted demand.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 dark:border-gray-800 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th className="text-left py-2.5 px-3 font-semibold">Product</th>
+                    <th className="text-right py-2.5 px-3 font-semibold">Stock</th>
+                    <th className="text-right py-2.5 px-3 font-semibold">Sold</th>
+                    <th className="text-right py-2.5 px-3 font-semibold">
+                      <span title="Total days minus estimated stockout days">Active Days</span>
+                    </th>
+                    <th className="text-right py-2.5 px-3 font-semibold">
+                      <span title="Units/day adjusted for stockout days">Adj. Burn</span>
+                    </th>
+                    <th className="text-right py-2.5 px-3 font-semibold">ROP</th>
+                    <th className="text-right py-2.5 px-3 font-semibold">Days Left</th>
+                    <th className="text-center py-2.5 px-3 font-semibold">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {burnRateData.map((p) => {
+                    const activeDays = p.period_days - p.stockout_days;
+                    const daysLeft = p.days_of_stock_left === -1 ? '∞' : p.days_of_stock_left.toFixed(1);
+                    const urgent = p.needs_reorder && p.current_stock <= 0;
+                    const warning = p.needs_reorder && p.current_stock > 0;
+                    return (
+                      <tr
+                        key={p.product_id}
+                        className={`border-b border-gray-50 dark:border-gray-800/50 transition-colors ${
+                          urgent ? 'bg-red-50/60 dark:bg-red-950/20' : warning ? 'bg-amber-50/60 dark:bg-amber-950/20' : ''
+                        }`}
+                      >
+                        <td className="py-2.5 px-3 font-medium text-gray-900 dark:text-gray-100 max-w-[200px] truncate" title={p.product_name}>
+                          {p.product_name}
+                        </td>
+                        <td className={`py-2.5 px-3 text-right tabular-nums font-semibold ${
+                          p.current_stock <= 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'
+                        }`}>
+                          {p.current_stock}
+                        </td>
+                        <td className="py-2.5 px-3 text-right tabular-nums text-gray-600 dark:text-gray-400">
+                          {p.total_sold}
+                        </td>
+                        <td className="py-2.5 px-3 text-right tabular-nums text-gray-600 dark:text-gray-400">
+                          {activeDays}<span className="text-gray-400 dark:text-gray-500">/{p.period_days}</span>
+                          {p.stockout_days > 0 && (
+                            <span className="ml-1 text-[10px] text-orange-500" title={`${p.stockout_days} stockout days excluded`}>
+                              ⚠
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-right tabular-nums font-medium text-indigo-600 dark:text-indigo-400">
+                          {p.adjusted_burn_rate}
+                          {p.naive_burn_rate !== p.adjusted_burn_rate && (
+                            <span className="ml-1 text-[10px] text-gray-400" title={`Naive: ${p.naive_burn_rate}/day`}>
+                              ({p.naive_burn_rate})
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-right tabular-nums font-semibold text-gray-700 dark:text-gray-300">
+                          {p.reorder_point}
+                        </td>
+                        <td className={`py-2.5 px-3 text-right tabular-nums font-semibold ${
+                          p.days_of_stock_left === -1
+                            ? 'text-gray-400'
+                            : p.days_of_stock_left <= leadTime
+                            ? 'text-red-600 dark:text-red-400'
+                            : p.days_of_stock_left <= leadTime * 2
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-green-600 dark:text-green-400'
+                        }`}>
+                          {daysLeft}
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          {urgent ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300">
+                              STOCKOUT
+                            </span>
+                          ) : warning ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
+                              REORDER
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300">
+                              OK
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-3">
+              Adj. Burn = units/day excluding stockout days · ROP = Adj. Burn × {leadTime}d lead time · Naive rate in parentheses when different
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

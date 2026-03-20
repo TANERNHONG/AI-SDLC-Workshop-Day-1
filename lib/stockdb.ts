@@ -13,6 +13,7 @@ export interface Product {
   cost_currency: string;      // currency of cost price (e.g. 'USD', 'SGD')
   cost_exchange_rate: number; // rate to convert cost → SGD (cost × rate = SGD cost)
   stock_quantity: number;
+  pending_stock: number;
   category: string | null;
   image_url: string | null;
   is_active: boolean;
@@ -183,6 +184,21 @@ export interface ProductPnL {
   gross_margin_pct: number;
 }
 
+export interface BurnRateROP {
+  product_id: number;
+  product_name: string;
+  current_stock: number;
+  total_sold: number;
+  period_days: number;
+  stockout_days: number;
+  naive_burn_rate: number;
+  adjusted_burn_rate: number;
+  lead_time_days: number;
+  reorder_point: number;
+  days_of_stock_left: number;   // -1 means infinite (no burn)
+  needs_reorder: boolean;
+}
+
 // ─── DB Instance ─────────────────────────────────────────────────────────────
 
 const dbPath = path.join(process.cwd(), 'stock.db');
@@ -351,10 +367,12 @@ export const productDB = {
         : 'SELECT * FROM products WHERE is_active = 1 ORDER BY name ASC'
     ).all() as any[];
     const stockMap = productDB.getComputedStockAll();
+    const pendingMap = productDB.getPendingStockAll();
     return rows.map(r => ({
       ...r,
       is_active: Boolean(r.is_active),
       stock_quantity: stockMap.get(r.id) ?? 0,
+      pending_stock: pendingMap.get(r.id) ?? 0,
     }));
   },
 
@@ -396,6 +414,20 @@ export const productDB = {
     `).get(id) as any).total;
 
     return purchased - sold + adjustments;
+  },
+
+  /** Compute pending stock (from purchases with status = 'pending') for all products */
+  getPendingStockAll(): Map<number, number> {
+    const rows = db.prepare(`
+      SELECT pi.product_id, COALESCE(SUM(pi.quantity), 0) AS total
+      FROM purchase_items pi
+      INNER JOIN purchases p ON p.id = pi.purchase_id
+      WHERE p.status = 'pending'
+      GROUP BY pi.product_id
+    `).all() as Array<{ product_id: number; total: number }>;
+    const map = new Map<number, number>();
+    for (const r of rows) map.set(r.product_id, r.total);
+    return map;
   },
 
   /** Compute stock for ALL products in one go (efficient for list views) */
@@ -709,6 +741,114 @@ export const saleDB = {
       GROUP BY COALESCE(p.category, 'Uncategorized')
       ORDER BY total_revenue DESC
     `).all(startDate, endDate + ' 23:59:59') as CategoryRevenueSummary[];
+  },
+
+  getBurnRateAndROP(startDate: string, endDate: string, leadTimeDays: number = 7): BurnRateROP[] {
+    const products = db.prepare('SELECT id, name FROM products WHERE is_active = 1').all() as Array<{ id: number; name: string }>;
+    const stockMap = productDB.getComputedStockAll();
+
+    const dailySales = db.prepare(`
+      SELECT si.product_id, date(s.sale_date) AS sale_date,
+             SUM(si.quantity - si.refunded_quantity) AS qty
+      FROM sale_items si
+      INNER JOIN sales s ON s.id = si.sale_id
+      WHERE s.status IN ('completed', 'partial_refund')
+        AND s.sale_date >= ? AND s.sale_date <= ?
+      GROUP BY si.product_id, date(s.sale_date)
+    `).all(startDate, endDate + ' 23:59:59') as Array<{ product_id: number; sale_date: string; qty: number }>;
+
+    const dailyPurchases = db.prepare(`
+      SELECT pi.product_id, date(p.purchase_date) AS purchase_date, SUM(pi.quantity) AS qty
+      FROM purchase_items pi
+      INNER JOIN purchases p ON p.id = pi.purchase_id
+      WHERE p.status = 'received'
+        AND p.purchase_date >= ? AND p.purchase_date <= ?
+      GROUP BY pi.product_id, date(p.purchase_date)
+    `).all(startDate, endDate + ' 23:59:59') as Array<{ product_id: number; purchase_date: string; qty: number }>;
+
+    const dailyAdjustments = db.prepare(`
+      SELECT product_id, date(event_date) AS event_date, SUM(quantity) AS qty
+      FROM stock_events
+      WHERE event_date >= ? AND event_date <= ?
+      GROUP BY product_id, date(event_date)
+    `).all(startDate, endDate + ' 23:59:59') as Array<{ product_id: number; event_date: string; qty: number }>;
+
+    // Build per-product daily lookup maps
+    const salesMap = new Map<number, Map<string, number>>();
+    for (const r of dailySales) {
+      if (!salesMap.has(r.product_id)) salesMap.set(r.product_id, new Map());
+      salesMap.get(r.product_id)!.set(r.sale_date, r.qty);
+    }
+    const purchaseMap = new Map<number, Map<string, number>>();
+    for (const r of dailyPurchases) {
+      if (!purchaseMap.has(r.product_id)) purchaseMap.set(r.product_id, new Map());
+      purchaseMap.get(r.product_id)!.set(r.purchase_date, r.qty);
+    }
+    const adjustmentMap = new Map<number, Map<string, number>>();
+    for (const r of dailyAdjustments) {
+      if (!adjustmentMap.has(r.product_id)) adjustmentMap.set(r.product_id, new Map());
+      adjustmentMap.get(r.product_id)!.set(r.event_date, r.qty);
+    }
+
+    // Generate all dates in range
+    const dates: string[] = [];
+    const cur = new Date(startDate);
+    const end = new Date(endDate);
+    while (cur <= end) {
+      dates.push(cur.toISOString().slice(0, 10));
+      cur.setDate(cur.getDate() + 1);
+    }
+    const periodDays = dates.length;
+
+    return products.map(product => {
+      const currentStock = stockMap.get(product.id) ?? 0;
+      const pSales = salesMap.get(product.id) ?? new Map();
+      const pPurchases = purchaseMap.get(product.id) ?? new Map();
+      const pAdjustments = adjustmentMap.get(product.id) ?? new Map();
+
+      const totalSold = Array.from(pSales.values()).reduce((s, q) => s + q, 0);
+
+      // Reconstruct stock levels backwards from current stock to identify stockout days
+      let stockoutDays = 0;
+      let runningStock = currentStock;
+      for (let i = dates.length - 1; i >= 0; i--) {
+        const date = dates[i];
+        const sold = pSales.get(date) ?? 0;
+        const purchased = pPurchases.get(date) ?? 0;
+        const adjusted = pAdjustments.get(date) ?? 0;
+        if (runningStock <= 0 && sold === 0) stockoutDays++;
+        // Reverse the day: end_of_prev = end_of_today + sold - purchased - adjusted
+        runningStock = runningStock + sold - purchased - adjusted;
+      }
+
+      const activeDays = Math.max(periodDays - stockoutDays, 1);
+      const naiveBurnRate = periodDays > 0 ? totalSold / periodDays : 0;
+      const adjustedBurnRate = totalSold / activeDays;
+      const reorderPoint = Math.ceil(adjustedBurnRate * leadTimeDays);
+      const daysLeft = adjustedBurnRate > 0 ? currentStock / adjustedBurnRate : -1;
+
+      return {
+        product_id: product.id,
+        product_name: product.name,
+        current_stock: currentStock,
+        total_sold: totalSold,
+        period_days: periodDays,
+        stockout_days: stockoutDays,
+        naive_burn_rate: Math.round(naiveBurnRate * 100) / 100,
+        adjusted_burn_rate: Math.round(adjustedBurnRate * 100) / 100,
+        lead_time_days: leadTimeDays,
+        reorder_point: reorderPoint,
+        days_of_stock_left: daysLeft === -1 ? -1 : Math.round(daysLeft * 10) / 10,
+        needs_reorder: adjustedBurnRate > 0 && currentStock <= reorderPoint,
+      };
+    })
+    .filter(p => p.total_sold > 0)
+    .sort((a, b) => {
+      if (a.needs_reorder !== b.needs_reorder) return a.needs_reorder ? -1 : 1;
+      const aLeft = a.days_of_stock_left === -1 ? Infinity : a.days_of_stock_left;
+      const bLeft = b.days_of_stock_left === -1 ? Infinity : b.days_of_stock_left;
+      return aLeft - bLeft;
+    });
   },
 };
 
