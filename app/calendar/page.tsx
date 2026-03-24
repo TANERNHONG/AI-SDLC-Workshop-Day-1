@@ -169,7 +169,7 @@ function CalendarContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#e8ecf1' }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--page-bg)' }}>
         <p>Loading calendar...</p>
       </div>
     );
@@ -177,34 +177,34 @@ function CalendarContent() {
 
   return (
     <div className="min-h-screen py-8" style={{
-      backgroundColor: '#e8ecf1',
-      fontFamily: "'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+      backgroundColor: 'var(--page-bg)',
+      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
     }}>
       <div className="max-w-7xl mx-auto px-4">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-4xl font-bold mb-1" style={{ color: '#1a202c' }}>Calendar</h1>
-            <p className="text-base" style={{ color: '#718096' }}>
+            <h1 className="text-4xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>Calendar</h1>
+            <p className="text-base" style={{ color: 'var(--text-secondary)' }}>
               {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
             </p>
           </div>
           <button
             onClick={() => router.push('/')}
             className="px-4 py-2 rounded-lg font-medium text-white transition-all hover:shadow-md"
-            style={{ backgroundColor: '#6b7280' }}
+            style={{ backgroundColor: 'var(--accent-neutral)' }}
           >
             ← Back to Todos
           </button>
         </div>
 
         {/* Navigation */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+        <div className="rounded-2xl shadow-lg p-6 mb-6" style={{ backgroundColor: 'var(--card-bg)' }}>
           <div className="flex justify-between items-center">
             <button
               onClick={() => navigateMonth('prev')}
               className="px-4 py-2 rounded-lg font-medium transition-all hover:shadow-md"
-              style={{ backgroundColor: '#f3f4f6', color: '#4a5568' }}
+              style={{ backgroundColor: 'var(--filter-bg)', color: 'var(--text-muted)' }}
             >
               ← Previous
             </button>
@@ -212,7 +212,7 @@ function CalendarContent() {
             <button
               onClick={goToToday}
               className="px-6 py-2 rounded-lg font-medium text-white transition-all hover:shadow-md"
-              style={{ backgroundColor: '#3b82f6' }}
+              style={{ backgroundColor: 'var(--accent-primary)' }}
             >
               Today
             </button>
@@ -220,7 +220,7 @@ function CalendarContent() {
             <button
               onClick={() => navigateMonth('next')}
               className="px-4 py-2 rounded-lg font-medium transition-all hover:shadow-md"
-              style={{ backgroundColor: '#f3f4f6', color: '#4a5568' }}
+              style={{ backgroundColor: 'var(--filter-bg)', color: 'var(--text-muted)' }}
             >
               Next →
             </button>
@@ -228,14 +228,14 @@ function CalendarContent() {
         </div>
 
         {/* Calendar Grid */}
-        <div className="bg-white rounded-2xl shadow-lg p-6">
+        <div className="rounded-2xl shadow-lg p-6" style={{ backgroundColor: 'var(--card-bg)' }}>
           {/* Day Headers */}
           <div className="grid grid-cols-7 gap-2 mb-4">
             {dayHeaders.map((day) => (
               <div
                 key={day}
                 className="text-center font-semibold py-2"
-                style={{ color: '#4a5568' }}
+                style={{ color: 'var(--text-muted)' }}
               >
                 {day}
               </div>
@@ -273,7 +273,7 @@ function CalendarContent() {
                   {day.todos.length > 0 && (
                     <span
                       className="text-xs px-1.5 py-0.5 rounded-full text-white font-medium"
-                      style={{ backgroundColor: '#3b82f6' }}
+                      style={{ backgroundColor: 'var(--accent-primary)' }}
                     >
                       {day.todos.length}
                     </span>
@@ -300,7 +300,7 @@ function CalendarContent() {
                     style={{
                       backgroundColor: priorityColors[todo.priority] + '20',
                       borderLeft: `3px solid ${priorityColors[todo.priority]}`,
-                      color: '#2d3748'
+                      color: 'var(--text-body)'
                     }}
                     title={todo.title}
                   >
@@ -320,12 +320,13 @@ function CalendarContent() {
           onClick={() => setSelectedDay(null)}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+            className="rounded-2xl shadow-2xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+            style={{ backgroundColor: 'var(--card-bg)' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex justify-between items-start mb-4">
               <div>
-                <h2 className="text-2xl font-bold" style={{ color: '#1a202c' }}>
+                <h2 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
                   {selectedDay.date.toLocaleDateString('en-US', {
                     weekday: 'long',
                     year: 'numeric',
@@ -350,7 +351,7 @@ function CalendarContent() {
             {/* Todos List */}
             {selectedDay.todos.length > 0 ? (
               <div className="space-y-3">
-                <h3 className="font-semibold text-lg" style={{ color: '#4a5568' }}>
+                <h3 className="font-semibold text-lg" style={{ color: 'var(--text-muted)' }}>
                   Tasks ({selectedDay.todos.length})
                 </h3>
                 {selectedDay.todos.map((todo) => (
@@ -358,14 +359,14 @@ function CalendarContent() {
                     key={todo.id}
                     className="p-4 rounded-lg border"
                     style={{
-                      borderColor: '#e2e8f0',
+                      borderColor: 'var(--border-color)',
                       borderLeftWidth: '4px',
                       borderLeftColor: priorityColors[todo.priority]
                     }}
                   >
                     <div className="flex items-start justify-between">
                       <div>
-                        <p className="font-medium" style={{ color: '#1a202c' }}>
+                        <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
                           {todo.title}
                         </p>
                         <div className="flex items-center gap-2 mt-1">

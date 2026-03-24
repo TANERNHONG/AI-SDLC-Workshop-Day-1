@@ -16,6 +16,16 @@ const NAV_ITEMS = [
     ),
   },
   {
+    href: '/stock/calendar',
+    label: 'Calendar',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+    ),
+  },
+  {
     href: '/stock/sales',
     label: 'Sales',
     icon: (
@@ -105,29 +115,47 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
+  {
+    href: '/stock/messages',
+    label: 'Messages',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+          d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+      </svg>
+    ),
+  },
 ];
 
 export default function StockShell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [dark, setDark] = useState(false);
+  const [theme, setTheme] = useState<'default' | 'dark' | 'pastel' | 'warm'>('default');
+  const [showPreferences, setShowPreferences] = useState(false);
   const pathname = usePathname();
 
-  // Sync dark state with document class on mount
+  // Sync theme state on mount
   useEffect(() => {
-    setDark(document.documentElement.classList.contains('dark'));
+    const saved = localStorage.getItem('stockcheck-theme') as typeof theme | null;
+    if (saved && ['default', 'dark', 'pastel', 'warm'].includes(saved)) {
+      setTheme(saved);
+    }
   }, []);
 
-  const toggleDarkMode = () => {
-    const next = !dark;
-    setDark(next);
-    if (next) {
+  function changeTheme(next: 'default' | 'dark' | 'pastel' | 'warm') {
+    setTheme(next);
+    localStorage.setItem('stockcheck-theme', next);
+
+    // Remove old attributes
+    document.documentElement.classList.remove('dark');
+    document.documentElement.removeAttribute('data-theme');
+
+    if (next === 'dark') {
       document.documentElement.classList.add('dark');
-      localStorage.setItem('stockcheck-theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('stockcheck-theme', 'light');
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else if (next !== 'default') {
+      document.documentElement.setAttribute('data-theme', next);
     }
-  };
+  }
 
   // Close sidebar on route change
   useEffect(() => {
@@ -149,7 +177,7 @@ export default function StockShell({ children }: { children: React.ReactNode }) 
   }, [sidebarOpen]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100">
+    <div className="min-h-screen" style={{ background: 'var(--page-bg)', color: 'var(--text-primary)' }}>
       {/* ── Sidebar Overlay ── */}
       {sidebarOpen && (
         <div
@@ -163,26 +191,26 @@ export default function StockShell({ children }: { children: React.ReactNode }) 
         id="stock-sidebar"
         className={`
           fixed top-0 left-0 z-40 h-full w-64
-          bg-white dark:bg-gray-900
-          border-r border-gray-200 dark:border-gray-800
           shadow-2xl
           transform transition-transform duration-300 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
           flex flex-col
         `}
+        style={{ background: 'var(--sidebar-bg)', borderRight: '1px solid var(--sidebar-border)' }}
       >
         {/* Logo */}
-        <div className="flex items-center gap-3 px-6 py-5 border-b border-gray-200 dark:border-gray-800">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0">
+        <div className="flex items-center gap-3 px-6 py-5" style={{ borderBottom: '1px solid var(--sidebar-border)' }}>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'var(--accent-primary)' }}>
             <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
                 d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
             </svg>
           </div>
-          <span className="font-bold text-lg text-gray-900 dark:text-white tracking-tight">StockCheck</span>
+          <span className="font-bold text-lg tracking-tight" style={{ color: 'var(--text-primary)' }}>StockCheck</span>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="ml-auto p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            className="ml-auto p-1.5 rounded-lg transition-colors"
+            style={{ color: 'var(--text-muted)' }}
             aria-label="Close sidebar"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -201,15 +229,15 @@ export default function StockShell({ children }: { children: React.ReactNode }) 
               <Link
                 key={item.href}
                 href={item.href}
-                className={`
-                  flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150
-                  ${isActive
-                    ? 'bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100'
-                  }
-                `}
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150"
+                style={isActive
+                  ? { background: 'var(--sidebar-active-bg)', color: 'var(--sidebar-active-text)' }
+                  : { color: 'var(--sidebar-text)' }
+                }
+                onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = 'var(--sidebar-hover)'; }}
+                onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
               >
-                <span className={isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 dark:text-gray-500'}>
+                <span style={{ color: isActive ? 'var(--sidebar-active-text)' : 'var(--sidebar-text-muted)' }}>
                   {item.icon}
                 </span>
                 {item.label}
@@ -219,20 +247,21 @@ export default function StockShell({ children }: { children: React.ReactNode }) 
         </nav>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800">
-          <p className="text-xs text-gray-400">StockCheck v1.2</p>
+        <div className="px-6 py-4" style={{ borderTop: '1px solid var(--sidebar-border)', color: 'var(--text-muted)' }}>
+          <p className="text-xs">StockCheck v1.2</p>
         </div>
       </aside>
 
       {/* ── Main Area ── */}
       <div className="flex flex-col min-h-screen">
         {/* Top Bar */}
-        <header className="sticky top-0 z-20 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shadow-sm">
+        <header className="sticky top-0 z-20 shadow-sm" style={{ background: 'var(--header-bg)', borderBottom: '1px solid var(--header-border)' }}>
           <div className="flex items-center gap-4 px-4 sm:px-6 h-14">
             <button
               id="sidebar-toggle"
               onClick={() => setSidebarOpen(true)}
-              className="p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="p-2 rounded-lg transition-colors"
+              style={{ color: 'var(--text-secondary)' }}
               aria-label="Open navigation"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -242,15 +271,15 @@ export default function StockShell({ children }: { children: React.ReactNode }) 
 
             {/* Breadcrumb */}
             <div className="flex items-center gap-2 text-sm">
-              <Link href="/stock" className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors font-medium">
+              <Link href="/stock" className="font-medium transition-colors" style={{ color: 'var(--text-muted)' }}>
                 StockCheck
               </Link>
               {pathname !== '/stock' && (
                 <>
-                  <svg className="w-3 h-3 text-gray-300" fill="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-3 h-3" style={{ color: 'var(--text-muted)' }} fill="currentColor" viewBox="0 0 24 24">
                     <path d="M9 18l6-6-6-6" />
                   </svg>
-                  <span className="text-gray-700 dark:text-gray-200 font-semibold capitalize">
+                  <span className="font-semibold capitalize" style={{ color: 'var(--text-primary)' }}>
                     {pathname.replace('/stock/', '')}
                   </span>
                 </>
@@ -258,26 +287,21 @@ export default function StockShell({ children }: { children: React.ReactNode }) 
             </div>
 
             <div className="ml-auto flex items-center gap-3">
-              <span className="text-xs text-gray-400 hidden sm:block">
+              <span className="text-xs hidden sm:block" style={{ color: 'var(--text-muted)' }}>
                 {new Date().toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
               </span>
               <button
-                onClick={toggleDarkMode}
-                className="p-2 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-                title={dark ? 'Light mode' : 'Dark mode'}
+                onClick={() => setShowPreferences(true)}
+                className="p-2 rounded-lg transition-colors"
+                style={{ color: 'var(--text-secondary)' }}
+                aria-label="Preferences"
+                title="Preferences"
               >
-                {dark ? (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
-                ) : (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                  </svg>
-                )}
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
               </button>
             </div>
           </div>
@@ -288,6 +312,61 @@ export default function StockShell({ children }: { children: React.ReactNode }) 
           {children}
         </main>
       </div>
+
+      {/* Preferences Modal */}
+      {showPreferences && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl shadow-2xl p-8" style={{ background: 'var(--modal-bg)' }}>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Theme</h2>
+              <button
+                onClick={() => setShowPreferences(false)}
+                className="p-2 rounded-lg transition-colors"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {([
+                { key: 'default', label: 'Light', gradient: 'linear-gradient(135deg, #f3f4f6, #4f46e5)', icon: '☀️' },
+                { key: 'dark', label: 'Dark', gradient: 'linear-gradient(135deg, #1f2937, #818cf8)', icon: '🌙' },
+                { key: 'pastel', label: 'Pastel', gradient: 'linear-gradient(135deg, #f0e6fa, #8b5cf6)', icon: '🌸' },
+                { key: 'warm', label: 'Warm', gradient: 'linear-gradient(135deg, #fdf6e3, #d97706)', icon: '🔥' },
+              ] as const).map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => changeTheme(t.key)}
+                  className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all hover:shadow-md"
+                  style={{
+                    borderColor: theme === t.key ? 'var(--accent-primary)' : 'var(--border-color)',
+                    background: theme === t.key ? 'var(--badge-active)' : 'transparent',
+                  }}
+                >
+                  <div className="w-12 h-12 rounded-full border-2" style={{ borderColor: 'var(--border-color)', background: t.gradient }} />
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-body)' }}>{t.icon} {t.label}</span>
+                  {theme === t.key && <span className="text-xs font-semibold" style={{ color: 'var(--accent-primary)' }}>✓ Active</span>}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-8 flex justify-end">
+              <button
+                onClick={() => setShowPreferences(false)}
+                className="px-6 py-2.5 rounded-lg font-medium text-white transition-colors"
+                style={{ background: 'var(--accent-primary)' }}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'var(--accent-primary-hover)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'var(--accent-primary)'}
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -16,6 +16,13 @@ export interface Product {
   pending_stock: number;
   category: string | null;
   image_url: string | null;
+  length_cm: number | null;
+  width_cm: number | null;
+  height_cm: number | null;
+  thickness_length_mm: number | null;
+  thickness_width_mm: number | null;
+  thickness_height_mm: number | null;
+  is_hypothetical: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -126,6 +133,7 @@ export interface Purchase {
   currency: string;
   exchange_rate: number;
   total_cost: number;
+  delivery_days: number | null;
   status: 'received' | 'pending' | 'cancelled';
   notes: string | null;
   created_at: string;
@@ -197,6 +205,20 @@ export interface BurnRateROP {
   reorder_point: number;
   days_of_stock_left: number;   // -1 means infinite (no burn)
   needs_reorder: boolean;
+}
+
+export interface ReleaseEvent {
+  id: number;
+  name: string;
+  release_date: string;
+  description: string | null;
+  game_series: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReleaseEventWithProducts extends ReleaseEvent {
+  products: Product[];
 }
 
 // ─── DB Instance ─────────────────────────────────────────────────────────────
@@ -318,6 +340,29 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_stock_events_prod ON stock_events(product_id);
   CREATE INDEX IF NOT EXISTS idx_stock_events_date ON stock_events(event_date);
+
+  CREATE TABLE IF NOT EXISTS release_events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT    NOT NULL,
+    release_date    TEXT    NOT NULL,
+    description     TEXT,
+    game_series     TEXT,
+    created_at      TEXT    DEFAULT (datetime('now')),
+    updated_at      TEXT    DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS release_event_products (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    release_event_id INTEGER NOT NULL,
+    product_id       INTEGER NOT NULL,
+    FOREIGN KEY (release_event_id) REFERENCES release_events(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    UNIQUE(release_event_id, product_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_release_events_date ON release_events(release_date);
+  CREATE INDEX IF NOT EXISTS idx_release_event_products_event ON release_event_products(release_event_id);
+  CREATE INDEX IF NOT EXISTS idx_release_event_products_prod ON release_event_products(product_id);
 `);
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
@@ -335,19 +380,35 @@ try { db.exec('ALTER TABLE purchases ADD COLUMN exchange_rate REAL NOT NULL DEFA
 try { db.exec("ALTER TABLE products ADD COLUMN cost_currency TEXT NOT NULL DEFAULT 'SGD'"); } catch { /* already exists */ }
 try { db.exec('ALTER TABLE products ADD COLUMN cost_exchange_rate REAL NOT NULL DEFAULT 1'); } catch { /* already exists */ }
 try { db.exec('ALTER TABLE sale_items ADD COLUMN unit_cost_sgd REAL NOT NULL DEFAULT 0'); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE products ADD COLUMN length_cm REAL'); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE products ADD COLUMN width_cm REAL'); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE products ADD COLUMN height_cm REAL'); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE products ADD COLUMN thickness_mm REAL'); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE products ADD COLUMN thickness_length_mm REAL'); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE products ADD COLUMN thickness_width_mm REAL'); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE products ADD COLUMN thickness_height_mm REAL'); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE products ADD COLUMN is_hypothetical INTEGER NOT NULL DEFAULT 0'); } catch { /* already exists */ }
+try { db.exec('ALTER TABLE purchases ADD COLUMN delivery_days INTEGER'); } catch { /* already exists */ }
 
 // ─── Product DB ──────────────────────────────────────────────────────────────
 
 export const productDB = {
-  create(data: Omit<Product, 'id' | 'created_at' | 'updated_at'>): Product {
+  create(data: Omit<Product, 'id' | 'created_at' | 'updated_at' | 'pending_stock'>): Product {
     const stmt = db.prepare(`
-      INSERT INTO products (name, sku, description, price, cost, cost_currency, cost_exchange_rate, stock_quantity, category, image_url, is_active)
-      VALUES (@name, @sku, @description, @price, @cost, @cost_currency, @cost_exchange_rate, 0, @category, @image_url, @is_active)
+      INSERT INTO products (name, sku, description, price, cost, cost_currency, cost_exchange_rate, stock_quantity, category, image_url, length_cm, width_cm, height_cm, thickness_length_mm, thickness_width_mm, thickness_height_mm, is_hypothetical, is_active)
+      VALUES (@name, @sku, @description, @price, @cost, @cost_currency, @cost_exchange_rate, 0, @category, @image_url, @length_cm, @width_cm, @height_cm, @thickness_length_mm, @thickness_width_mm, @thickness_height_mm, @is_hypothetical, @is_active)
     `);
     const result = stmt.run({
       ...data,
       cost_currency: data.cost_currency ?? 'SGD',
       cost_exchange_rate: data.cost_exchange_rate ?? 1,
+      length_cm: data.length_cm ?? null,
+      width_cm: data.width_cm ?? null,
+      height_cm: data.height_cm ?? null,
+      thickness_length_mm: data.thickness_length_mm ?? null,
+      thickness_width_mm: data.thickness_width_mm ?? null,
+      thickness_height_mm: data.thickness_height_mm ?? null,
+      is_hypothetical: data.is_hypothetical ? 1 : 0,
       is_active: data.is_active ? 1 : 0,
     });
     return productDB.getById(Number(result.lastInsertRowid))!;
@@ -357,7 +418,7 @@ export const productDB = {
     const row = db.prepare('SELECT * FROM products WHERE id = ?').get(id) as any;
     if (!row) return undefined;
     const computed = productDB.getComputedStockForProduct(id);
-    return { ...row, is_active: Boolean(row.is_active), stock_quantity: computed };
+    return { ...row, is_active: Boolean(row.is_active), is_hypothetical: Boolean(row.is_hypothetical), stock_quantity: computed };
   },
 
   list(includeInactive = false): Product[] {
@@ -371,6 +432,7 @@ export const productDB = {
     return rows.map(r => ({
       ...r,
       is_active: Boolean(r.is_active),
+      is_hypothetical: Boolean(r.is_hypothetical),
       stock_quantity: stockMap.get(r.id) ?? 0,
       pending_stock: pendingMap.get(r.id) ?? 0,
     }));
@@ -378,7 +440,7 @@ export const productDB = {
 
   update(id: number, data: Partial<Omit<Product, 'id' | 'created_at' | 'updated_at'>>): Product | undefined {
     // stock_quantity is computed — ignore it if passed
-    const allowed = ['name', 'sku', 'description', 'price', 'cost', 'cost_currency', 'cost_exchange_rate', 'category', 'image_url', 'is_active'];
+    const allowed = ['name', 'sku', 'description', 'price', 'cost', 'cost_currency', 'cost_exchange_rate', 'category', 'image_url', 'length_cm', 'width_cm', 'height_cm', 'thickness_length_mm', 'thickness_width_mm', 'thickness_height_mm', 'is_hypothetical', 'is_active'];
     const entries = Object.entries(data).filter(([k]) => allowed.includes(k));
     if (entries.length === 0) return productDB.getById(id);
     const sets = entries.map(([k]) => `${k} = @${k}`).join(', ');
@@ -850,6 +912,47 @@ export const saleDB = {
       return aLeft - bLeft;
     });
   },
+
+  /** Returns daily sale quantities per product for the last N days (for sparklines). */
+  getProductDailySparkline(days: number = 30): Record<number, number[]> {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - days + 1);
+    const startStr = start.toISOString().slice(0, 10);
+    const endStr = end.toISOString().slice(0, 10);
+
+    // Build date array
+    const dates: string[] = [];
+    const cur = new Date(startStr);
+    while (cur <= end) {
+      dates.push(cur.toISOString().slice(0, 10));
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    const rows = db.prepare(`
+      SELECT si.product_id, date(s.sale_date) AS sale_date,
+             SUM(si.quantity - si.refunded_quantity) AS qty
+      FROM sale_items si
+      INNER JOIN sales s ON s.id = si.sale_id
+      WHERE s.status IN ('completed', 'partial_refund')
+        AND s.sale_date >= ? AND s.sale_date <= ?
+      GROUP BY si.product_id, date(s.sale_date)
+    `).all(startStr, endStr + ' 23:59:59') as Array<{ product_id: number; sale_date: string; qty: number }>;
+
+    // Build per-product lookup
+    const map = new Map<number, Map<string, number>>();
+    for (const r of rows) {
+      if (!map.has(r.product_id)) map.set(r.product_id, new Map());
+      map.get(r.product_id)!.set(r.sale_date, r.qty);
+    }
+
+    // Build result: product_id -> array of daily quantities
+    const result: Record<number, number[]> = {};
+    for (const [pid, dayMap] of map) {
+      result[pid] = dates.map(d => dayMap.get(d) ?? 0);
+    }
+    return result;
+  },
 };
 
 // ─── Supplier DB ─────────────────────────────────────────────────────────────
@@ -906,7 +1009,7 @@ export const purchaseDB = {
   create(
     supplier_id: number,
     items: Array<{ product_id: number; quantity: number; unit_cost: number }>,
-    opts: { discount?: number; tax?: number; shipping_cost?: number; currency?: string; exchange_rate?: number; notes?: string; purchase_date?: string; invoice_ref?: string; status?: string } = {}
+    opts: { discount?: number; tax?: number; shipping_cost?: number; currency?: string; exchange_rate?: number; notes?: string; purchase_date?: string; invoice_ref?: string; status?: string; delivery_days?: number } = {}
   ): PurchaseWithItems {
     const subtotal = items.reduce((s, i) => s + i.unit_cost * i.quantity, 0);
     const discount = opts.discount ?? 0;
@@ -919,8 +1022,8 @@ export const purchaseDB = {
 
     const run = db.transaction(() => {
       const purchaseResult = db.prepare(`
-        INSERT INTO purchases (supplier_id, purchase_date, invoice_ref, subtotal, discount, tax, shipping_cost, currency, exchange_rate, total_cost, notes, status)
-        VALUES (@supplier_id, @purchase_date, @invoice_ref, @subtotal, @discount, @tax, @shipping_cost, @currency, @exchange_rate, @total_cost, @notes, @status)
+        INSERT INTO purchases (supplier_id, purchase_date, invoice_ref, subtotal, discount, tax, shipping_cost, currency, exchange_rate, total_cost, notes, status, delivery_days)
+        VALUES (@supplier_id, @purchase_date, @invoice_ref, @subtotal, @discount, @tax, @shipping_cost, @currency, @exchange_rate, @total_cost, @notes, @status, @delivery_days)
       `).run({
         supplier_id,
         purchase_date: opts.purchase_date ?? new Date().toISOString().replace('T', ' ').slice(0, 19),
@@ -928,6 +1031,7 @@ export const purchaseDB = {
         subtotal, discount, tax, shipping_cost, currency, exchange_rate, total_cost,
         notes: opts.notes ?? null,
         status,
+        delivery_days: opts.delivery_days ?? null,
       });
       const purchaseId = Number(purchaseResult.lastInsertRowid);
 
@@ -964,7 +1068,7 @@ export const purchaseDB = {
       items?: Array<{ product_id: number; quantity: number; unit_cost: number }>;
       discount?: number; tax?: number; shipping_cost?: number;
       currency?: string; exchange_rate?: number;
-      notes?: string; status?: string;
+      notes?: string; status?: string; delivery_days?: number | null;
     }
   ): PurchaseWithItems | undefined {
     const purchase = purchaseDB.getById(id);
@@ -1025,12 +1129,13 @@ export const purchaseDB = {
       db.prepare(`
         UPDATE purchases SET subtotal=@subtotal, discount=@discount, tax=@tax, shipping_cost=@shipping_cost,
           currency=@currency, exchange_rate=@exchange_rate, total_cost=@total_cost,
-          notes=@notes, status=@status, updated_at=datetime('now')
+          notes=@notes, status=@status, delivery_days=@delivery_days, updated_at=datetime('now')
         WHERE id=@id
       `).run({
         id, subtotal, discount, tax, shipping_cost, currency, exchange_rate, total_cost,
         notes: data.notes ?? purchase.notes,
         status: newStatus,
+        delivery_days: data.delivery_days !== undefined ? data.delivery_days : (purchase.delivery_days ?? null),
       });
 
       return purchaseDB.getById(id)!;
@@ -1833,6 +1938,79 @@ export const shippingOrderDB = {
 
   getPackage(id: number): Package | undefined {
     return db.prepare('SELECT * FROM packages WHERE id = ?').get(id) as Package | undefined;
+  },
+};
+
+// ─── Release Event DB ────────────────────────────────────────────────────────
+
+export const releaseEventDB = {
+  create(data: { name: string; release_date: string; description?: string | null; game_series?: string | null }): ReleaseEvent {
+    const result = db.prepare(`
+      INSERT INTO release_events (name, release_date, description, game_series)
+      VALUES (@name, @release_date, @description, @game_series)
+    `).run({
+      name: data.name,
+      release_date: data.release_date,
+      description: data.description ?? null,
+      game_series: data.game_series ?? null,
+    });
+    return db.prepare('SELECT * FROM release_events WHERE id = ?').get(Number(result.lastInsertRowid)) as ReleaseEvent;
+  },
+
+  getById(id: number): ReleaseEventWithProducts | undefined {
+    const row = db.prepare('SELECT * FROM release_events WHERE id = ?').get(id) as ReleaseEvent | undefined;
+    if (!row) return undefined;
+    const products = db.prepare(`
+      SELECT p.* FROM products p
+      INNER JOIN release_event_products rep ON rep.product_id = p.id
+      WHERE rep.release_event_id = ?
+      ORDER BY p.name ASC
+    `).all(id) as Product[];
+    return { ...row, products };
+  },
+
+  list(): ReleaseEventWithProducts[] {
+    const rows = db.prepare('SELECT * FROM release_events ORDER BY release_date ASC').all() as ReleaseEvent[];
+    return rows.map(row => {
+      const products = db.prepare(`
+        SELECT p.* FROM products p
+        INNER JOIN release_event_products rep ON rep.product_id = p.id
+        WHERE rep.release_event_id = ?
+        ORDER BY p.name ASC
+      `).all(row.id) as Product[];
+      return { ...row, products };
+    });
+  },
+
+  update(id: number, data: Partial<{ name: string; release_date: string; description: string | null; game_series: string | null }>): ReleaseEvent | undefined {
+    const allowed = ['name', 'release_date', 'description', 'game_series'];
+    const entries = Object.entries(data).filter(([k]) => allowed.includes(k));
+    if (entries.length === 0) return db.prepare('SELECT * FROM release_events WHERE id = ?').get(id) as ReleaseEvent | undefined;
+    const sets = entries.map(([k]) => `${k} = @${k}`).join(', ');
+    const params: any = Object.fromEntries(entries);
+    params.id = id;
+    db.prepare(`UPDATE release_events SET ${sets}, updated_at = datetime('now') WHERE id = @id`).run(params);
+    return db.prepare('SELECT * FROM release_events WHERE id = ?').get(id) as ReleaseEvent | undefined;
+  },
+
+  delete(id: number): void {
+    db.prepare('DELETE FROM release_events WHERE id = ?').run(id);
+  },
+
+  addProduct(releaseEventId: number, productId: number): void {
+    db.prepare('INSERT OR IGNORE INTO release_event_products (release_event_id, product_id) VALUES (?, ?)').run(releaseEventId, productId);
+  },
+
+  removeProduct(releaseEventId: number, productId: number): void {
+    db.prepare('DELETE FROM release_event_products WHERE release_event_id = ? AND product_id = ?').run(releaseEventId, productId);
+  },
+
+  setProducts(releaseEventId: number, productIds: number[]): void {
+    db.prepare('DELETE FROM release_event_products WHERE release_event_id = ?').run(releaseEventId);
+    const insert = db.prepare('INSERT INTO release_event_products (release_event_id, product_id) VALUES (?, ?)');
+    for (const pid of productIds) {
+      insert.run(releaseEventId, pid);
+    }
   },
 };
 

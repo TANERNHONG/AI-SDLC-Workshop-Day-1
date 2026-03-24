@@ -16,6 +16,11 @@ function fmtDay(s: string) {
 function fmtMonth(s: string) {
   return new Date(s).toLocaleDateString('en-SG', { month: 'long', year: 'numeric' });
 }
+
+function SortArrow({ col, sortBy, sortDir }: { col: string; sortBy: string; sortDir: 'asc' | 'desc' }) {
+  if (col !== sortBy) return <span className="ml-1 text-gray-300 dark:text-gray-600">↕</span>;
+  return <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+}
 function groupKey(s: string, mode: 'day' | 'month') {
   const d = new Date(s);
   if (mode === 'month') return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -892,6 +897,8 @@ function SalesContent() {
   const [search, setSearch] = useState('');
   const [groupMode, setGroupMode] = useState<'none' | 'day' | 'month'>('none');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [sortBy, setSortBy] = useState<string>('sale_date');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups(prev => {
@@ -929,6 +936,27 @@ function SalesContent() {
   );
 
   const totalRevenue = filtered.filter((s) => s.status === 'completed').reduce((a, s) => a + s.total, 0);
+
+  const toggleSort = (col: string) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(col); setSortDir('asc'); }
+  };
+
+  const saleSortFn = (a: SaleWithItems, b: SaleWithItems) => {
+    let va: any, vb: any;
+    switch (sortBy) {
+      case 'invoice': va = a.invoice_number.toLowerCase(); vb = b.invoice_number.toLowerCase(); break;
+      case 'sale_date': va = a.sale_date; vb = b.sale_date; break;
+      case 'channel': va = (a.channel ?? '').toLowerCase(); vb = (b.channel ?? '').toLowerCase(); break;
+      case 'subtotal': va = a.subtotal; vb = b.subtotal; break;
+      case 'total': va = a.total; vb = b.total; break;
+      case 'status': va = a.status; vb = b.status; break;
+      default: va = a.sale_date; vb = b.sale_date;
+    }
+    if (va < vb) return sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  };
 
   // Build grouped data for Day / Month views
   const groups: { key: string; label: string; sales: SaleWithItems[] }[] = (() => {
@@ -1070,18 +1098,18 @@ function SalesContent() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-100 dark:border-gray-800 text-xs text-gray-400 uppercase tracking-wide">
-                        <th className="text-left px-5 py-3.5 font-medium">Invoice</th>
-                        <th className="text-left px-3 py-3.5 font-medium hidden sm:table-cell">Date & Time</th>
+                        <th className="text-left px-5 py-3.5 font-medium cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('invoice')}>Invoice<SortArrow col="invoice" sortBy={sortBy} sortDir={sortDir} /></th>
+                        <th className="text-left px-3 py-3.5 font-medium hidden sm:table-cell cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('sale_date')}>Date & Time<SortArrow col="sale_date" sortBy={sortBy} sortDir={sortDir} /></th>
                         <th className="text-left px-3 py-3.5 font-medium hidden lg:table-cell">Items</th>
-                        <th className="text-left px-3 py-3.5 font-medium hidden md:table-cell">Channel</th>
-                        <th className="text-right px-3 py-3.5 font-medium hidden sm:table-cell">Subtotal</th>
-                        <th className="text-right px-3 py-3.5 font-medium">Total</th>
-                        <th className="text-left px-3 py-3.5 font-medium">Status</th>
+                        <th className="text-left px-3 py-3.5 font-medium hidden md:table-cell cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('channel')}>Channel<SortArrow col="channel" sortBy={sortBy} sortDir={sortDir} /></th>
+                        <th className="text-right px-3 py-3.5 font-medium hidden sm:table-cell cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('subtotal')}>Subtotal<SortArrow col="subtotal" sortBy={sortBy} sortDir={sortDir} /></th>
+                        <th className="text-right px-3 py-3.5 font-medium cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('total')}>Total<SortArrow col="total" sortBy={sortBy} sortDir={sortDir} /></th>
+                        <th className="text-left px-3 py-3.5 font-medium cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('status')}>Status<SortArrow col="status" sortBy={sortBy} sortDir={sortDir} /></th>
                         <th className="px-5 py-3.5 font-medium"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-                      {group.sales.map((sale) => (
+                      {[...group.sales].sort(saleSortFn).map((sale) => (
                         <tr key={sale.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                           <td className="px-5 py-4">
                             <p className="font-semibold text-gray-900 dark:text-white">{sale.invoice_number}</p>

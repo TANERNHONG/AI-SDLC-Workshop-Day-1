@@ -7,6 +7,21 @@ function fmtCurrency(n: number) {
   return new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' }).format(n);
 }
 
+function SortArrow({ col, sortBy, sortDir }: { col: string; sortBy: string; sortDir: 'asc' | 'desc' }) {
+  if (col !== sortBy) return <span className="ml-1 text-gray-300 dark:text-gray-600">↕</span>;
+  return <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+}
+
+function useSort(defaultCol: string, defaultDir: 'asc' | 'desc' = 'asc') {
+  const [sortBy, setSortBy] = useState<string>(defaultCol);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(defaultDir);
+  const toggleSort = (col: string) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(col); setSortDir('asc'); }
+  };
+  return { sortBy, sortDir, toggleSort };
+}
+
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
 type SubTab = 'rates' | 'bulk' | 'surcharges' | 'services';
@@ -128,6 +143,7 @@ function RateTablesPanel({ courierId }: { courierId: number }) {
   const [rows, setRows] = useState<CourierRateTable[]>([]);
   const [form, setForm] = useState({ max_weight_kg: '', max_length_cm: '', max_width_cm: '', max_height_cm: '', price: '' });
   const [editId, setEditId] = useState<number | null>(null);
+  const { sortBy, sortDir, toggleSort } = useSort('max_weight_kg');
 
   const fetch_ = useCallback(async () => {
     const res = await fetch(`/api/stock/couriers/${courierId}/rate-tables`);
@@ -192,9 +208,20 @@ function RateTablesPanel({ courierId }: { courierId: number }) {
         {editId && <button onClick={() => { setEditId(null); setForm({ max_weight_kg: '', max_length_cm: '', max_width_cm: '', max_height_cm: '', price: '' }); }} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg text-sm">Cancel</button>}
       </div>
       <table className="w-full text-sm">
-        <thead><tr className="border-b dark:border-gray-700 text-left text-gray-500"><th className="py-2 px-3">Weight (kg)</th><th className="py-2 px-3">Max L (cm)</th><th className="py-2 px-3">Max W (cm)</th><th className="py-2 px-3">Max H (cm)</th><th className="py-2 px-3">Price</th><th className="py-2 px-3 w-24"></th></tr></thead>
+        <thead><tr className="border-b dark:border-gray-700 text-left text-gray-500">
+          <th className="py-2 px-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('max_weight_kg')}>Weight (kg)<SortArrow col="max_weight_kg" sortBy={sortBy} sortDir={sortDir} /></th>
+          <th className="py-2 px-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('max_length_cm')}>Max L (cm)<SortArrow col="max_length_cm" sortBy={sortBy} sortDir={sortDir} /></th>
+          <th className="py-2 px-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('max_width_cm')}>Max W (cm)<SortArrow col="max_width_cm" sortBy={sortBy} sortDir={sortDir} /></th>
+          <th className="py-2 px-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('max_height_cm')}>Max H (cm)<SortArrow col="max_height_cm" sortBy={sortBy} sortDir={sortDir} /></th>
+          <th className="py-2 px-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('price')}>Price<SortArrow col="price" sortBy={sortBy} sortDir={sortDir} /></th>
+          <th className="py-2 px-3 w-24"></th>
+        </tr></thead>
         <tbody>
-          {rows.map(r => (
+          {[...rows].sort((a, b) => {
+            const av = (a as any)[sortBy] ?? 0, bv = (b as any)[sortBy] ?? 0;
+            const cmp = typeof av === 'string' ? av.localeCompare(bv) : av - bv;
+            return sortDir === 'asc' ? cmp : -cmp;
+          }).map(r => (
             <tr key={r.id} className="border-b dark:border-gray-800">
               <td className="py-2 px-3">≤ {r.max_weight_kg}</td>
               <td className="py-2 px-3">≤ {r.max_length_cm}</td>
@@ -221,6 +248,7 @@ function BulkSavingsPanel({ courierId }: { courierId: number }) {
   const [rows, setRows] = useState<CourierBulkSaving[]>([]);
   const [form, setForm] = useState({ min_orders: '', max_orders: '', discount_pct: '' });
   const [editId, setEditId] = useState<number | null>(null);
+  const { sortBy, sortDir, toggleSort } = useSort('min_orders');
 
   const fetch_ = useCallback(async () => {
     const res = await fetch(`/api/stock/couriers/${courierId}/bulk-savings`);
@@ -275,9 +303,18 @@ function BulkSavingsPanel({ courierId }: { courierId: number }) {
         {editId && <button onClick={() => { setEditId(null); setForm({ min_orders: '', max_orders: '', discount_pct: '' }); }} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg text-sm">Cancel</button>}
       </div>
       <table className="w-full text-sm">
-        <thead><tr className="border-b dark:border-gray-700 text-left text-gray-500"><th className="py-2 px-3">Min Orders</th><th className="py-2 px-3">Max Orders</th><th className="py-2 px-3">Discount</th><th className="py-2 px-3 w-24"></th></tr></thead>
+        <thead><tr className="border-b dark:border-gray-700 text-left text-gray-500">
+          <th className="py-2 px-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('min_orders')}>Min Orders<SortArrow col="min_orders" sortBy={sortBy} sortDir={sortDir} /></th>
+          <th className="py-2 px-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('max_orders')}>Max Orders<SortArrow col="max_orders" sortBy={sortBy} sortDir={sortDir} /></th>
+          <th className="py-2 px-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('discount_pct')}>Discount<SortArrow col="discount_pct" sortBy={sortBy} sortDir={sortDir} /></th>
+          <th className="py-2 px-3 w-24"></th>
+        </tr></thead>
         <tbody>
-          {rows.map(r => (
+          {[...rows].sort((a, b) => {
+            const av = (a as any)[sortBy] ?? 0, bv = (b as any)[sortBy] ?? 0;
+            const cmp = typeof av === 'string' ? av.localeCompare(bv) : av - bv;
+            return sortDir === 'asc' ? cmp : -cmp;
+          }).map(r => (
             <tr key={r.id} className="border-b dark:border-gray-800">
               <td className="py-2 px-3">{r.min_orders}</td>
               <td className="py-2 px-3">{r.max_orders ?? '∞'}</td>
@@ -302,6 +339,7 @@ function SurchargesPanel({ courierId }: { courierId: number }) {
   const [rows, setRows] = useState<CourierSurcharge[]>([]);
   const [form, setForm] = useState({ item_name: '', price: '', description: '' });
   const [editId, setEditId] = useState<number | null>(null);
+  const { sortBy, sortDir, toggleSort } = useSort('item_name');
 
   const fetch_ = useCallback(async () => {
     const res = await fetch(`/api/stock/couriers/${courierId}/surcharges`);
@@ -356,9 +394,18 @@ function SurchargesPanel({ courierId }: { courierId: number }) {
         {editId && <button onClick={() => { setEditId(null); setForm({ item_name: '', price: '', description: '' }); }} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg text-sm">Cancel</button>}
       </div>
       <table className="w-full text-sm">
-        <thead><tr className="border-b dark:border-gray-700 text-left text-gray-500"><th className="py-2 px-3">Item</th><th className="py-2 px-3">Price</th><th className="py-2 px-3">Description</th><th className="py-2 px-3 w-24"></th></tr></thead>
+        <thead><tr className="border-b dark:border-gray-700 text-left text-gray-500">
+          <th className="py-2 px-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('item_name')}>Item<SortArrow col="item_name" sortBy={sortBy} sortDir={sortDir} /></th>
+          <th className="py-2 px-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('price')}>Price<SortArrow col="price" sortBy={sortBy} sortDir={sortDir} /></th>
+          <th className="py-2 px-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('description')}>Description<SortArrow col="description" sortBy={sortBy} sortDir={sortDir} /></th>
+          <th className="py-2 px-3 w-24"></th>
+        </tr></thead>
         <tbody>
-          {rows.map(r => (
+          {[...rows].sort((a, b) => {
+            const av = (a as any)[sortBy] ?? '', bv = (b as any)[sortBy] ?? '';
+            const cmp = typeof av === 'string' ? av.localeCompare(bv) : av - bv;
+            return sortDir === 'asc' ? cmp : -cmp;
+          }).map(r => (
             <tr key={r.id} className="border-b dark:border-gray-800">
               <td className="py-2 px-3">{r.item_name}</td>
               <td className="py-2 px-3">{fmtCurrency(r.price)}</td>
@@ -383,6 +430,7 @@ function AdditionalServicesPanel({ courierId }: { courierId: number }) {
   const [rows, setRows] = useState<CourierAdditionalService[]>([]);
   const [form, setForm] = useState({ service_name: '', price: '', description: '' });
   const [editId, setEditId] = useState<number | null>(null);
+  const { sortBy, sortDir, toggleSort } = useSort('service_name');
 
   const fetch_ = useCallback(async () => {
     const res = await fetch(`/api/stock/couriers/${courierId}/additional-services`);
@@ -437,9 +485,18 @@ function AdditionalServicesPanel({ courierId }: { courierId: number }) {
         {editId && <button onClick={() => { setEditId(null); setForm({ service_name: '', price: '', description: '' }); }} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg text-sm">Cancel</button>}
       </div>
       <table className="w-full text-sm">
-        <thead><tr className="border-b dark:border-gray-700 text-left text-gray-500"><th className="py-2 px-3">Service</th><th className="py-2 px-3">Price</th><th className="py-2 px-3">Description</th><th className="py-2 px-3 w-24"></th></tr></thead>
+        <thead><tr className="border-b dark:border-gray-700 text-left text-gray-500">
+          <th className="py-2 px-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('service_name')}>Service<SortArrow col="service_name" sortBy={sortBy} sortDir={sortDir} /></th>
+          <th className="py-2 px-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('price')}>Price<SortArrow col="price" sortBy={sortBy} sortDir={sortDir} /></th>
+          <th className="py-2 px-3 cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('description')}>Description<SortArrow col="description" sortBy={sortBy} sortDir={sortDir} /></th>
+          <th className="py-2 px-3 w-24"></th>
+        </tr></thead>
         <tbody>
-          {rows.map(r => (
+          {[...rows].sort((a, b) => {
+            const av = (a as any)[sortBy] ?? '', bv = (b as any)[sortBy] ?? '';
+            const cmp = typeof av === 'string' ? av.localeCompare(bv) : av - bv;
+            return sortDir === 'asc' ? cmp : -cmp;
+          }).map(r => (
             <tr key={r.id} className="border-b dark:border-gray-800">
               <td className="py-2 px-3">{r.service_name}</td>
               <td className="py-2 px-3">{fmtCurrency(r.price)}</td>

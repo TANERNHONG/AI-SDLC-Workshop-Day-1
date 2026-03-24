@@ -2,18 +2,238 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ── Default theme (Light) ── */
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --page-bg: #f3f4f6;
+  --card-bg: #ffffff;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --text-body: #374151;
+  --text-muted: #9ca3af;
+  --border-color: #e5e7eb;
+  --input-bg: #ffffff;
+  --input-border: #d1d5db;
+  --accent-primary: #4f46e5;
+  --accent-primary-hover: #4338ca;
+  --accent-secondary: #9333ea;
+  --accent-green: #10b981;
+  --accent-green-hover: #059669;
+  --accent-orange: #f97316;
+  --accent-neutral: #6b7280;
+  --filter-bg: #f3f4f6;
+  --panel-bg: #f9fafb;
+  --focus-ring: rgba(79, 70, 229, 0.15);
+  --success-bg: #d1fae5;
+  --success-text: #065f46;
+  --error-bg: #fee2e2;
+  --error-text: #991b1b;
+  --dropdown-bg: #ffffff;
+  --hover-bg: #f9fafb;
+  --sidebar-bg: #ffffff;
+  --sidebar-border: #e5e7eb;
+  --sidebar-hover: #f3f4f6;
+  --sidebar-active-bg: #eef2ff;
+  --sidebar-active-text: #4338ca;
+  --sidebar-text: #374151;
+  --sidebar-text-muted: #9ca3af;
+  --header-bg: #ffffff;
+  --header-border: #e5e7eb;
+  --modal-bg: #ffffff;
+  --badge-active: #eef2ff;
+  --badge-active-text: #4338ca;
 }
 
-.dark {
+/* ── Dark theme ── */
+:root[data-theme="dark"] {
   --background: #0a0a0a;
   --foreground: #ededed;
+  --page-bg: #111827;
+  --card-bg: #1f2937;
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --text-body: #d1d5db;
+  --text-muted: #6b7280;
+  --border-color: #374151;
+  --input-bg: #1f2937;
+  --input-border: #4b5563;
+  --accent-primary: #818cf8;
+  --accent-primary-hover: #6366f1;
+  --accent-secondary: #a78bfa;
+  --accent-green: #34d399;
+  --accent-green-hover: #10b981;
+  --accent-orange: #fb923c;
+  --accent-neutral: #9ca3af;
+  --filter-bg: #1f2937;
+  --panel-bg: #111827;
+  --focus-ring: rgba(129, 140, 248, 0.2);
+  --success-bg: #064e3b;
+  --success-text: #6ee7b7;
+  --error-bg: #7f1d1d;
+  --error-text: #fca5a5;
+  --dropdown-bg: #1f2937;
+  --hover-bg: #374151;
+  --sidebar-bg: #111827;
+  --sidebar-border: #1f2937;
+  --sidebar-hover: #1f2937;
+  --sidebar-active-bg: #1e1b4b;
+  --sidebar-active-text: #a5b4fc;
+  --sidebar-text: #d1d5db;
+  --sidebar-text-muted: #6b7280;
+  --header-bg: #111827;
+  --header-border: #1f2937;
+  --modal-bg: #1f2937;
+  --badge-active: #1e1b4b;
+  --badge-active-text: #a5b4fc;
+}
+
+/* ── Pastel theme ── */
+:root[data-theme="pastel"] {
+  --background: #fefcff;
+  --foreground: #4a3f6b;
+  --page-bg: #f0e6fa;
+  --card-bg: #fefcff;
+  --text-primary: #4a3f6b;
+  --text-secondary: #9b8fbf;
+  --text-body: #5c5478;
+  --text-muted: #b8aed4;
+  --border-color: #e0d4f5;
+  --input-bg: #faf7ff;
+  --input-border: #d4c6f0;
+  --accent-primary: #8b5cf6;
+  --accent-primary-hover: #7c3aed;
+  --accent-secondary: #f472b6;
+  --accent-green: #6ee7b7;
+  --accent-green-hover: #34d399;
+  --accent-orange: #fdba74;
+  --accent-neutral: #a78bfa;
+  --filter-bg: #f3eeff;
+  --panel-bg: #f8f4ff;
+  --focus-ring: rgba(139, 92, 246, 0.2);
+  --success-bg: #dcfce7;
+  --success-text: #166534;
+  --error-bg: #fce7f3;
+  --error-text: #9d174d;
+  --dropdown-bg: #fefcff;
+  --hover-bg: #f5f0ff;
+  --sidebar-bg: #faf7ff;
+  --sidebar-border: #e0d4f5;
+  --sidebar-hover: #f0e6fa;
+  --sidebar-active-bg: #ede9fe;
+  --sidebar-active-text: #7c3aed;
+  --sidebar-text: #5c5478;
+  --sidebar-text-muted: #b8aed4;
+  --header-bg: #fefcff;
+  --header-border: #e0d4f5;
+  --modal-bg: #fefcff;
+  --badge-active: #ede9fe;
+  --badge-active-text: #7c3aed;
+}
+
+/* ── Warm theme ── */
+:root[data-theme="warm"] {
+  --background: #fffdf5;
+  --foreground: #5c4033;
+  --page-bg: #fdf6e3;
+  --card-bg: #fffdf5;
+  --text-primary: #5c4033;
+  --text-secondary: #a0856b;
+  --text-body: #6b5342;
+  --text-muted: #c4a882;
+  --border-color: #e8d5c0;
+  --input-bg: #fffcf5;
+  --input-border: #dcc8ae;
+  --accent-primary: #d97706;
+  --accent-primary-hover: #b45309;
+  --accent-secondary: #c2410c;
+  --accent-green: #65a30d;
+  --accent-green-hover: #4d7c0f;
+  --accent-orange: #ea580c;
+  --accent-neutral: #92716a;
+  --filter-bg: #fef3e2;
+  --panel-bg: #fefaf0;
+  --focus-ring: rgba(217, 119, 6, 0.15);
+  --success-bg: #ecfccb;
+  --success-text: #3f6212;
+  --error-bg: #fee2e2;
+  --error-text: #991b1b;
+  --dropdown-bg: #fffdf5;
+  --hover-bg: #fef9ee;
+  --sidebar-bg: #fffcf5;
+  --sidebar-border: #e8d5c0;
+  --sidebar-hover: #fef3e2;
+  --sidebar-active-bg: #fef3c7;
+  --sidebar-active-text: #b45309;
+  --sidebar-text: #6b5342;
+  --sidebar-text-muted: #c4a882;
+  --header-bg: #fffdf5;
+  --header-border: #e8d5c0;
+  --modal-bg: #fffdf5;
+  --badge-active: #fef3c7;
+  --badge-active-text: #b45309;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
+
+/* ── Theme-aware overrides for Tailwind utility classes ──
+   These remap common hardcoded neutral colors in sub-pages
+   so that Pastel, Warm, and Dark themes apply globally. */
+
+/* Background overrides */
+:root[data-theme="pastel"] .bg-white { background-color: var(--card-bg) !important; }
+:root[data-theme="pastel"] .bg-gray-50 { background-color: var(--page-bg) !important; }
+:root[data-theme="pastel"] .bg-gray-100 { background-color: var(--filter-bg) !important; }
+:root[data-theme="pastel"] .border-gray-200 { border-color: var(--border-color) !important; }
+:root[data-theme="pastel"] .border-gray-100 { border-color: var(--border-color) !important; }
+:root[data-theme="pastel"] .divide-gray-50 > :not(:last-child) { border-color: var(--border-color) !important; }
+:root[data-theme="pastel"] .text-gray-900 { color: var(--text-primary) !important; }
+:root[data-theme="pastel"] .text-gray-700 { color: var(--text-body) !important; }
+:root[data-theme="pastel"] .text-gray-600 { color: var(--text-body) !important; }
+:root[data-theme="pastel"] .text-gray-500 { color: var(--text-secondary) !important; }
+:root[data-theme="pastel"] .text-gray-400 { color: var(--text-muted) !important; }
+:root[data-theme="pastel"] .hover\:bg-gray-50:hover { background-color: var(--hover-bg) !important; }
+:root[data-theme="pastel"] .hover\:bg-gray-100:hover { background-color: var(--hover-bg) !important; }
+:root[data-theme="pastel"] .bg-indigo-600 { background-color: var(--accent-primary) !important; }
+:root[data-theme="pastel"] .hover\:bg-indigo-700:hover { background-color: var(--accent-primary-hover) !important; }
+:root[data-theme="pastel"] .text-indigo-600 { color: var(--accent-primary) !important; }
+:root[data-theme="pastel"] .bg-indigo-50 { background-color: var(--badge-active) !important; }
+:root[data-theme="pastel"] .ring-indigo-500 { --tw-ring-color: var(--accent-primary) !important; }
+
+:root[data-theme="warm"] .bg-white { background-color: var(--card-bg) !important; }
+:root[data-theme="warm"] .bg-gray-50 { background-color: var(--page-bg) !important; }
+:root[data-theme="warm"] .bg-gray-100 { background-color: var(--filter-bg) !important; }
+:root[data-theme="warm"] .border-gray-200 { border-color: var(--border-color) !important; }
+:root[data-theme="warm"] .border-gray-100 { border-color: var(--border-color) !important; }
+:root[data-theme="warm"] .divide-gray-50 > :not(:last-child) { border-color: var(--border-color) !important; }
+:root[data-theme="warm"] .text-gray-900 { color: var(--text-primary) !important; }
+:root[data-theme="warm"] .text-gray-700 { color: var(--text-body) !important; }
+:root[data-theme="warm"] .text-gray-600 { color: var(--text-body) !important; }
+:root[data-theme="warm"] .text-gray-500 { color: var(--text-secondary) !important; }
+:root[data-theme="warm"] .text-gray-400 { color: var(--text-muted) !important; }
+:root[data-theme="warm"] .hover\:bg-gray-50:hover { background-color: var(--hover-bg) !important; }
+:root[data-theme="warm"] .hover\:bg-gray-100:hover { background-color: var(--hover-bg) !important; }
+:root[data-theme="warm"] .bg-indigo-600 { background-color: var(--accent-primary) !important; }
+:root[data-theme="warm"] .hover\:bg-indigo-700:hover { background-color: var(--accent-primary-hover) !important; }
+:root[data-theme="warm"] .text-indigo-600 { color: var(--accent-primary) !important; }
+:root[data-theme="warm"] .bg-indigo-50 { background-color: var(--badge-active) !important; }
+:root[data-theme="warm"] .ring-indigo-500 { --tw-ring-color: var(--accent-primary) !important; }
+
+/* Dark theme: override base (non-dark:) classes too for full coverage */
+:root[data-theme="dark"] .bg-white { background-color: var(--card-bg) !important; }
+:root[data-theme="dark"] .bg-gray-50 { background-color: var(--page-bg) !important; }
+:root[data-theme="dark"] .bg-gray-100 { background-color: var(--filter-bg) !important; }
+:root[data-theme="dark"] .border-gray-200 { border-color: var(--border-color) !important; }
+:root[data-theme="dark"] .border-gray-100 { border-color: var(--border-color) !important; }
+:root[data-theme="dark"] .divide-gray-50 > :not(:last-child) { border-color: var(--border-color) !important; }
+:root[data-theme="dark"] .text-gray-900 { color: var(--text-primary) !important; }
+:root[data-theme="dark"] .text-gray-700 { color: var(--text-body) !important; }
+:root[data-theme="dark"] .text-gray-600 { color: var(--text-body) !important; }
+:root[data-theme="dark"] .text-gray-500 { color: var(--text-secondary) !important; }
+:root[data-theme="dark"] .text-gray-400 { color: var(--text-muted) !important; }
+:root[data-theme="dark"] .hover\:bg-gray-50:hover { background-color: var(--hover-bg) !important; }
+:root[data-theme="dark"] .hover\:bg-gray-100:hover { background-color: var(--hover-bg) !important; }

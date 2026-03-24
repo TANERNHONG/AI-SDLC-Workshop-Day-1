@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
         purchase_date: body.purchase_date || undefined,
         invoice_ref: body.invoice_ref || undefined,
         status: body.status || 'received',
+        delivery_days: body.delivery_days != null ? Number(body.delivery_days) : undefined,
       }
     );
     return NextResponse.json(purchase, { status: 201 });

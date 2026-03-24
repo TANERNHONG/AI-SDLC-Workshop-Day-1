@@ -25,6 +25,11 @@ const fmt$ = (v: number) =>
 const fmtK  = (v: number) => Math.abs(v) >= 1000 ? `$${(v / 1000).toFixed(1)}k` : fmt$(v);
 const fmtPct = (v: number) => `${v.toFixed(1)}%`;
 
+function SortArrow({ col, sortBy, sortDir }: { col: string; sortBy: string; sortDir: 'asc' | 'desc' }) {
+  if (col !== sortBy) return <span className="ml-1 text-gray-300 dark:text-gray-600">↕</span>;
+  return <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+}
+
 function getDateRange(days: number): { startDate: string; endDate: string } {
   const end   = new Date();
   const start = new Date();
@@ -109,6 +114,26 @@ export default function PnLPage() {
   const [daily, setDaily] = useState<DailyPnL[]>([]);
   const [products, setProducts] = useState<ProductPnL[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sortBy, setSortBy] = useState<string>('gross_profit');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const toggleSort = (col: string) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(col); setSortDir('asc'); }
+  };
+
+  const sortedProducts = [...products].sort((a, b) => {
+    let cmp = 0;
+    switch (sortBy) {
+      case 'product_name': cmp = a.product_name.localeCompare(b.product_name); break;
+      case 'total_quantity': cmp = a.total_quantity - b.total_quantity; break;
+      case 'revenue': cmp = a.revenue - b.revenue; break;
+      case 'cogs': cmp = a.cogs - b.cogs; break;
+      case 'gross_profit': cmp = a.gross_profit - b.gross_profit; break;
+      case 'gross_margin_pct': cmp = a.gross_margin_pct - b.gross_margin_pct; break;
+    }
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
 
   const { startDate, endDate } = useMemo(() => getDateRange(range), [range]);
 
@@ -266,16 +291,16 @@ export default function PnLPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 dark:bg-gray-800 text-xs text-gray-500 uppercase tracking-wide">
                     <tr>
-                      <th className="px-5 py-3 text-left">Product</th>
-                      <th className="px-5 py-3 text-right">Units Sold</th>
-                      <th className="px-5 py-3 text-right">Revenue</th>
-                      <th className="px-5 py-3 text-right">COGS</th>
-                      <th className="px-5 py-3 text-right">Gross Profit</th>
-                      <th className="px-5 py-3 text-right">Margin</th>
+                      <th className="px-5 py-3 text-left cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('product_name')}>Product<SortArrow col="product_name" sortBy={sortBy} sortDir={sortDir} /></th>
+                      <th className="px-5 py-3 text-right cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('total_quantity')}>Units Sold<SortArrow col="total_quantity" sortBy={sortBy} sortDir={sortDir} /></th>
+                      <th className="px-5 py-3 text-right cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('revenue')}>Revenue<SortArrow col="revenue" sortBy={sortBy} sortDir={sortDir} /></th>
+                      <th className="px-5 py-3 text-right cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('cogs')}>COGS<SortArrow col="cogs" sortBy={sortBy} sortDir={sortDir} /></th>
+                      <th className="px-5 py-3 text-right cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('gross_profit')}>Gross Profit<SortArrow col="gross_profit" sortBy={sortBy} sortDir={sortDir} /></th>
+                      <th className="px-5 py-3 text-right cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('gross_margin_pct')}>Margin<SortArrow col="gross_margin_pct" sortBy={sortBy} sortDir={sortDir} /></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-                    {products.map(p => (
+                    {sortedProducts.map(p => (
                       <tr key={p.product_id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                         <td className="px-5 py-3 font-medium text-gray-900 dark:text-white">{p.product_name}</td>
                         <td className="px-5 py-3 text-right text-gray-600 dark:text-gray-400">{p.total_quantity.toLocaleString()}</td>

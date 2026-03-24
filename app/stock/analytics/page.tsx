@@ -19,6 +19,11 @@ function fmtCurrency(n: number) {
   return new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' }).format(n);
 }
 
+function SortArrow({ col, sortBy, sortDir }: { col: string; sortBy: string; sortDir: 'asc' | 'desc' }) {
+  if (col !== sortBy) return <span className="ml-1 text-gray-300 dark:text-gray-600">↕</span>;
+  return <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+}
+
 const RANGES = [
   { label: '7 days',  days: 7 },
   { label: '30 days', days: 30 },
@@ -124,6 +129,28 @@ export default function AnalyticsPage() {
   const [burnRateData, setBurnRateData] = useState<BurnRateROP[]>([]);
   const [leadTime, setLeadTime] = useState(7);
   const [loading, setLoading] = useState(true);
+  const [sortBy, setSortBy] = useState<string>('days_of_stock_left');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  const toggleSort = (col: string) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(col); setSortDir('asc'); }
+  };
+
+  const sortedBurnRate = [...burnRateData].sort((a, b) => {
+    let cmp = 0;
+    switch (sortBy) {
+      case 'product_name': cmp = a.product_name.localeCompare(b.product_name); break;
+      case 'current_stock': cmp = a.current_stock - b.current_stock; break;
+      case 'total_sold': cmp = a.total_sold - b.total_sold; break;
+      case 'active_days': cmp = (a.period_days - a.stockout_days) - (b.period_days - b.stockout_days); break;
+      case 'adjusted_burn_rate': cmp = a.adjusted_burn_rate - b.adjusted_burn_rate; break;
+      case 'reorder_point': cmp = a.reorder_point - b.reorder_point; break;
+      case 'days_of_stock_left': cmp = a.days_of_stock_left - b.days_of_stock_left; break;
+      case 'needs_reorder': cmp = (a.needs_reorder ? 1 : 0) - (b.needs_reorder ? 1 : 0); break;
+    }
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -536,22 +563,22 @@ export default function AnalyticsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-gray-800 text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    <th className="text-left py-2.5 px-3 font-semibold">Product</th>
-                    <th className="text-right py-2.5 px-3 font-semibold">Stock</th>
-                    <th className="text-right py-2.5 px-3 font-semibold">Sold</th>
-                    <th className="text-right py-2.5 px-3 font-semibold">
-                      <span title="Total days minus estimated stockout days">Active Days</span>
+                    <th className="text-left py-2.5 px-3 font-semibold cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('product_name')}>Product<SortArrow col="product_name" sortBy={sortBy} sortDir={sortDir} /></th>
+                    <th className="text-right py-2.5 px-3 font-semibold cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('current_stock')}>Stock<SortArrow col="current_stock" sortBy={sortBy} sortDir={sortDir} /></th>
+                    <th className="text-right py-2.5 px-3 font-semibold cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('total_sold')}>Sold<SortArrow col="total_sold" sortBy={sortBy} sortDir={sortDir} /></th>
+                    <th className="text-right py-2.5 px-3 font-semibold cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('active_days')}>
+                      <span title="Total days minus estimated stockout days">Active Days</span><SortArrow col="active_days" sortBy={sortBy} sortDir={sortDir} />
                     </th>
-                    <th className="text-right py-2.5 px-3 font-semibold">
-                      <span title="Units/day adjusted for stockout days">Adj. Burn</span>
+                    <th className="text-right py-2.5 px-3 font-semibold cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('adjusted_burn_rate')}>
+                      <span title="Units/day adjusted for stockout days">Adj. Burn</span><SortArrow col="adjusted_burn_rate" sortBy={sortBy} sortDir={sortDir} />
                     </th>
-                    <th className="text-right py-2.5 px-3 font-semibold">ROP</th>
-                    <th className="text-right py-2.5 px-3 font-semibold">Days Left</th>
-                    <th className="text-center py-2.5 px-3 font-semibold">Status</th>
+                    <th className="text-right py-2.5 px-3 font-semibold cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('reorder_point')}>ROP<SortArrow col="reorder_point" sortBy={sortBy} sortDir={sortDir} /></th>
+                    <th className="text-right py-2.5 px-3 font-semibold cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('days_of_stock_left')}>Days Left<SortArrow col="days_of_stock_left" sortBy={sortBy} sortDir={sortDir} /></th>
+                    <th className="text-center py-2.5 px-3 font-semibold cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('needs_reorder')}>Status<SortArrow col="needs_reorder" sortBy={sortBy} sortDir={sortDir} /></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {burnRateData.map((p) => {
+                  {sortedBurnRate.map((p) => {
                     const activeDays = p.period_days - p.stockout_days;
                     const daysLeft = p.days_of_stock_left === -1 ? '∞' : p.days_of_stock_left.toFixed(1);
                     const urgent = p.needs_reorder && p.current_stock <= 0;

@@ -30,6 +30,11 @@ const fmtDate = (d: string) => {
 };
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
+function SortArrow({ col, sortBy, sortDir }: { col: string; sortBy: string; sortDir: 'asc' | 'desc' }) {
+  if (col !== sortBy) return <span className="ml-1 text-gray-300 dark:text-gray-600">↕</span>;
+  return <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+}
+
 // ── EventModal ────────────────────────────────────────────────────────────────
 function EventModal({
   event,
@@ -328,6 +333,8 @@ export default function StockAdjustmentsPage() {
   // Modal state: undefined = closed, null = new, object = editing
   const [modalEvent, setModalEvent] = useState<StockEvent | null | undefined>(undefined);
   const [deleteEvent, setDeleteEvent] = useState<StockEvent | null>(null);
+  const [sortBy, setSortBy] = useState<string>('event_date');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const fetchEvents = useCallback(async () => {
     try {
@@ -386,6 +393,26 @@ export default function StockAdjustmentsPage() {
 
   const getBadgeClass = (type: string) =>
     EVENT_BADGE[type] ?? EVENT_BADGE.Other;
+
+  const toggleSort = (col: string) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(col); setSortDir('asc'); }
+  };
+
+  const sortedFiltered = [...filtered].sort((a, b) => {
+    let va: any, vb: any;
+    switch (sortBy) {
+      case 'event_date': va = a.event_date; vb = b.event_date; break;
+      case 'product': va = a.product_name.toLowerCase(); vb = b.product_name.toLowerCase(); break;
+      case 'reason': va = a.event_type.toLowerCase(); vb = b.event_type.toLowerCase(); break;
+      case 'quantity': va = a.quantity; vb = b.quantity; break;
+      case 'notes': va = (a.notes ?? '').toLowerCase(); vb = (b.notes ?? '').toLowerCase(); break;
+      default: va = a.event_date; vb = b.event_date;
+    }
+    if (va < vb) return sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
 
   return (
     <div className="space-y-6">
@@ -493,16 +520,16 @@ export default function StockAdjustmentsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-gray-800">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Date</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Product</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Reason</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Qty Change</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Notes</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('event_date')}>Date<SortArrow col="event_date" sortBy={sortBy} sortDir={sortDir} /></th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('product')}>Product<SortArrow col="product" sortBy={sortBy} sortDir={sortDir} /></th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('reason')}>Reason<SortArrow col="reason" sortBy={sortBy} sortDir={sortDir} /></th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('quantity')}>Qty Change<SortArrow col="quantity" sortBy={sortBy} sortDir={sortDir} /></th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('notes')}>Notes<SortArrow col="notes" sortBy={sortBy} sortDir={sortDir} /></th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-gray-800/50">
-                {filtered.map(ev => (
+                {sortedFiltered.map(ev => (
                   <tr key={ev.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-300 whitespace-nowrap">
                       {fmtDate(ev.event_date)}

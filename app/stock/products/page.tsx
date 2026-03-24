@@ -1,11 +1,40 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import type { Product } from '@/lib/stockdb';
 
 function fmtCurrency(n: number) {
   return new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' }).format(n);
+}
+
+function SortArrow({ col, sortBy, sortDir }: { col: string; sortBy: string; sortDir: 'asc' | 'desc' }) {
+  if (col !== sortBy) return <span className="ml-1 text-gray-300 dark:text-gray-600">↕</span>;
+  return <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+}
+
+function Sparkline({ data }: { data: number[] }) {
+  if (!data || data.length === 0) return <span className="text-gray-300 dark:text-gray-600">—</span>;
+  const max = Math.max(...data, 1);
+  const w = 80, h = 24;
+  const points = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * w;
+    const y = h - (v / max) * (h - 2) - 1;
+    return `${x},${y}`;
+  });
+  return (
+    <svg width={w} height={h} className="inline-block">
+      <polyline
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        className="text-indigo-500 dark:text-indigo-400"
+        points={points.join(' ')}
+      />
+    </svg>
+  );
 }
 
 // ── Product Form Modal ────────────────────────────────────────────────────────
@@ -29,6 +58,13 @@ function ProductModal({
     cost_currency: product?.cost_currency ?? 'SGD',
     cost_exchange_rate: (product?.cost_exchange_rate ?? 1).toString(),
     category: product?.category ?? '',
+    length_cm: product?.length_cm?.toString() ?? '',
+    width_cm: product?.width_cm?.toString() ?? '',
+    height_cm: product?.height_cm?.toString() ?? '',
+    thickness_length_mm: product?.thickness_length_mm?.toString() ?? '',
+    thickness_width_mm: product?.thickness_width_mm?.toString() ?? '',
+    thickness_height_mm: product?.thickness_height_mm?.toString() ?? '',
+    is_hypothetical: product?.is_hypothetical ?? false,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -55,6 +91,13 @@ function ProductModal({
           cost_currency: form.cost_currency,
           cost_exchange_rate: parseFloat(form.cost_exchange_rate) || 1,
           category: form.category.trim() || null,
+          length_cm: form.length_cm ? parseFloat(form.length_cm) : null,
+          width_cm: form.width_cm ? parseFloat(form.width_cm) : null,
+          height_cm: form.height_cm ? parseFloat(form.height_cm) : null,
+          thickness_length_mm: form.thickness_length_mm ? parseFloat(form.thickness_length_mm) : null,
+          thickness_width_mm: form.thickness_width_mm ? parseFloat(form.thickness_width_mm) : null,
+          thickness_height_mm: form.thickness_height_mm ? parseFloat(form.thickness_height_mm) : null,
+          is_hypothetical: form.is_hypothetical,
         }),
       });
       if (!res.ok) {
@@ -231,6 +274,109 @@ function ProductModal({
 
             <div className="col-span-2">
               <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                Dimensions (cm)
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={form.length_cm}
+                    onChange={(e) => setForm({ ...form, length_cm: e.target.value })}
+                    placeholder="Length"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all tabular-nums"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-0.5 text-center">L</p>
+                </div>
+                <div>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={form.width_cm}
+                    onChange={(e) => setForm({ ...form, width_cm: e.target.value })}
+                    placeholder="Width"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all tabular-nums"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-0.5 text-center">W</p>
+                </div>
+                <div>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={form.height_cm}
+                    onChange={(e) => setForm({ ...form, height_cm: e.target.value })}
+                    placeholder="Height"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all tabular-nums"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-0.5 text-center">H</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
+                Thickness (mm)
+              </label>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={form.thickness_length_mm}
+                    onChange={(e) => setForm({ ...form, thickness_length_mm: e.target.value })}
+                    placeholder="Length"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all tabular-nums"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-0.5 text-center">L</p>
+                </div>
+                <div>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={form.thickness_width_mm}
+                    onChange={(e) => setForm({ ...form, thickness_width_mm: e.target.value })}
+                    placeholder="Width"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all tabular-nums"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-0.5 text-center">W</p>
+                </div>
+                <div>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={form.thickness_height_mm}
+                    onChange={(e) => setForm({ ...form, thickness_height_mm: e.target.value })}
+                    placeholder="Height"
+                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all tabular-nums"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-0.5 text-center">H</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="col-span-2">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.is_hypothetical}
+                  onChange={(e) => setForm({ ...form, is_hypothetical: e.target.checked })}
+                  className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500"
+                />
+                <div>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Hypothetical Product</span>
+                  <p className="text-[10px] text-gray-400">Mark as hypothetical — separated from confirmed products</p>
+                </div>
+              </label>
+            </div>
+
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1.5">
                 Description
               </label>
               <textarea
@@ -333,6 +479,9 @@ function ProductsContent() {
   const [search, setSearch] = useState('');
   const [modalProduct, setModalProduct] = useState<Product | null | undefined>(undefined); // undefined = closed
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
+  const [sortBy, setSortBy] = useState<string>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [sparklines, setSparklines] = useState<Record<number, number[]>>({});
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -343,6 +492,13 @@ function ProductsContent() {
   }, []);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
+
+  useEffect(() => {
+    fetch('/api/stock/products/sparkline')
+      .then(r => r.json())
+      .then(d => setSparklines(d))
+      .catch(() => {});
+  }, [products]);
 
   // Open modal if ?action=new
   useEffect(() => {
@@ -359,8 +515,36 @@ function ProductsContent() {
     (p.category ?? '').toLowerCase().includes(search.toLowerCase())
   );
 
-  const active = filtered.filter((p) => p.is_active);
+  const confirmed = filtered.filter((p) => p.is_active && !p.is_hypothetical);
+  const hypothetical = filtered.filter((p) => p.is_active && p.is_hypothetical);
   const inactive = filtered.filter((p) => !p.is_active);
+
+  const toggleSort = (col: string) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(col); setSortDir('asc'); }
+  };
+
+  const sortFn = (a: Product, b: Product) => {
+    let va: any, vb: any;
+    switch (sortBy) {
+      case 'name': va = a.name.toLowerCase(); vb = b.name.toLowerCase(); break;
+      case 'sku': va = a.sku.toLowerCase(); vb = b.sku.toLowerCase(); break;
+      case 'category': va = (a.category ?? '').toLowerCase(); vb = (b.category ?? '').toLowerCase(); break;
+      case 'price': va = a.price; vb = b.price; break;
+      case 'margin': va = a.price > 0 ? (a.price - a.cost) / a.price : 0; vb = b.price > 0 ? (b.price - b.cost) / b.price : 0; break;
+      case 'stock': va = a.stock_quantity; vb = b.stock_quantity; break;
+      case 'incoming': va = (a as any).pending_stock ?? 0; vb = (b as any).pending_stock ?? 0; break;
+      default: va = a.name.toLowerCase(); vb = b.name.toLowerCase();
+    }
+    if (va < vb) return sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  };
+
+  const sortedDisplay = [...confirmed].sort(sortFn).concat(
+    hypothetical.length > 0 ? [...hypothetical].sort(sortFn) : [],
+    [...inactive].sort(sortFn)
+  );
 
   const negativeStockProducts = products.filter((p) => p.is_active && p.stock_quantity < 0);
 
@@ -395,7 +579,10 @@ function ProductsContent() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Products</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-            {products.filter((p) => p.is_active).length} active products
+            {products.filter((p) => p.is_active && !p.is_hypothetical).length} active products
+            {products.filter((p) => p.is_hypothetical).length > 0 && (
+              <span className="ml-1">· {products.filter((p) => p.is_hypothetical).length} hypothetical</span>
+            )}
           </p>
         </div>
         <button
@@ -444,22 +631,34 @@ function ProductsContent() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 dark:border-gray-800 text-xs text-gray-400 uppercase tracking-wide">
-                <th className="text-left px-5 py-3.5 font-medium">Product</th>
-                <th className="text-left px-3 py-3.5 font-medium hidden sm:table-cell">SKU</th>
-                <th className="text-left px-3 py-3.5 font-medium hidden md:table-cell">Category</th>
-                <th className="text-right px-3 py-3.5 font-medium">Price</th>
-                <th className="text-right px-3 py-3.5 font-medium hidden sm:table-cell">Margin</th>
-                <th className="text-right px-3 py-3.5 font-medium">Stock</th>
-                <th className="text-right px-3 py-3.5 font-medium">Incoming</th>
+                <th className="text-left px-5 py-3.5 font-medium cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('name')}>Product<SortArrow col="name" sortBy={sortBy} sortDir={sortDir} /></th>
+                <th className="text-left px-3 py-3.5 font-medium hidden sm:table-cell cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('sku')}>SKU<SortArrow col="sku" sortBy={sortBy} sortDir={sortDir} /></th>
+                <th className="text-left px-3 py-3.5 font-medium hidden md:table-cell cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('category')}>Category<SortArrow col="category" sortBy={sortBy} sortDir={sortDir} /></th>
+                <th className="text-left px-3 py-3.5 font-medium hidden lg:table-cell">Dimensions</th>
+                <th className="text-right px-3 py-3.5 font-medium cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('price')}>Price<SortArrow col="price" sortBy={sortBy} sortDir={sortDir} /></th>
+                <th className="text-right px-3 py-3.5 font-medium hidden sm:table-cell cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('margin')}>Margin<SortArrow col="margin" sortBy={sortBy} sortDir={sortDir} /></th>
+                <th className="text-right px-3 py-3.5 font-medium cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('stock')}>Stock<SortArrow col="stock" sortBy={sortBy} sortDir={sortDir} /></th>
+                <th className="text-right px-3 py-3.5 font-medium cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('incoming')}>Incoming<SortArrow col="incoming" sortBy={sortBy} sortDir={sortDir} /></th>
                 <th className="text-center px-3 py-3.5 font-medium">Status</th>
+                <th className="px-3 py-3.5 font-medium hidden lg:table-cell">Sales (30d)</th>
                 <th className="px-5 py-3.5 font-medium"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-              {[...active, ...inactive].map((product) => {
+              {sortedDisplay.map((product, idx) => {
                 const margin = product.price > 0 ? ((product.price - product.cost) / product.price * 100) : 0;
+                // Show section headers between groups
+                const prevProduct = idx > 0 ? sortedDisplay[idx - 1] : null;
+                const showHypotheticalHeader = product.is_hypothetical && product.is_active && (!prevProduct || !prevProduct.is_hypothetical || !prevProduct.is_active);
+                const showInactiveHeader = !product.is_active && (!prevProduct || prevProduct.is_active);
                 return (
-                  <tr key={product.id} className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors ${!product.is_active ? 'opacity-50' : ''}`}>
+                  <React.Fragment key={product.id}>{showHypotheticalHeader && (
+                    <tr><td colSpan={11} className="px-5 py-2 bg-violet-50 dark:bg-violet-950/30 text-xs font-semibold text-violet-600 dark:text-violet-400 uppercase tracking-wide">Hypothetical Products</td></tr>
+                  )}
+                  {showInactiveHeader && (
+                    <tr><td colSpan={11} className="px-5 py-2 bg-gray-50 dark:bg-gray-800/50 text-xs font-semibold text-gray-400 uppercase tracking-wide">Inactive Products</td></tr>
+                  )}
+                  <tr className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors ${!product.is_active ? 'opacity-50' : ''} ${product.is_hypothetical ? 'bg-violet-50/30 dark:bg-violet-950/10' : ''}`}>
                     <td className="px-5 py-3.5">
                       <div>
                         <p className="font-semibold text-gray-900 dark:text-white">{product.name}</p>
@@ -475,6 +674,14 @@ function ProductsContent() {
                     </td>
                     <td className="px-3 py-3.5 text-gray-500 dark:text-gray-400 hidden md:table-cell">
                       {product.category ?? <span className="text-gray-300 dark:text-gray-600">—</span>}
+                    </td>
+                    <td className="px-3 py-3.5 text-gray-500 dark:text-gray-400 hidden lg:table-cell text-xs tabular-nums">
+                      {product.length_cm || product.width_cm || product.height_cm
+                        ? `${product.length_cm ?? '—'} × ${product.width_cm ?? '—'} × ${product.height_cm ?? '—'}`
+                        : <span className="text-gray-300 dark:text-gray-600">—</span>}
+                      {(product.thickness_length_mm || product.thickness_width_mm || product.thickness_height_mm) && (
+                        <span className="block text-gray-400 mt-0.5">Thickness: {product.thickness_length_mm ?? '—'} × {product.thickness_width_mm ?? '—'} × {product.thickness_height_mm ?? '—'} mm</span>
+                      )}
                     </td>
                     <td className="px-3 py-3.5 text-right font-semibold text-gray-900 dark:text-white tabular-nums">
                       {fmtCurrency(product.price)}
@@ -499,9 +706,18 @@ function ProductsContent() {
                       )}
                     </td>
                     <td className="px-3 py-3.5 text-center">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${product.is_active ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'}`}>
-                        {product.is_active ? 'Active' : 'Inactive'}
-                      </span>
+                      {product.is_hypothetical ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300">
+                          Hypothetical
+                        </span>
+                      ) : (
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${product.is_active ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300' : 'bg-gray-100 dark:bg-gray-800 text-gray-400'}`}>
+                          {product.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-3.5 hidden lg:table-cell">
+                      <Sparkline data={sparklines[product.id] ?? []} />
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-1 justify-end">
@@ -528,6 +744,7 @@ function ProductsContent() {
                       </div>
                     </td>
                   </tr>
+                  </React.Fragment>
                 );
               })}
             </tbody>

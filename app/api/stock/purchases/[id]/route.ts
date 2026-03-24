@@ -20,6 +20,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     if (body.currency !== undefined) updateData.currency = body.currency;
     if (body.exchange_rate !== undefined) updateData.exchange_rate = Number(body.exchange_rate);
     if (body.notes !== undefined) updateData.notes = body.notes;
+    if (body.delivery_days !== undefined) updateData.delivery_days = body.delivery_days != null ? Number(body.delivery_days) : null;
     if (Array.isArray(body.items)) {
       updateData.items = body.items.map((i: { product_id: number; quantity: number; unit_cost: number }) => ({
         product_id: Number(i.product_id),

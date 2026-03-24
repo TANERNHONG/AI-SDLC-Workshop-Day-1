@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, sku, description, price, cost, cost_currency, cost_exchange_rate, stock_quantity, category, image_url } = body;
+    const { name, sku, description, price, cost, cost_currency, cost_exchange_rate, stock_quantity, category, image_url, length_cm, width_cm, height_cm, thickness_length_mm, thickness_width_mm, thickness_height_mm, is_hypothetical } = body;
 
     if (!name || !sku || price == null) {
       return NextResponse.json({ error: 'name, sku, and price are required' }, { status: 400 });
@@ -32,6 +32,13 @@ export async function POST(request: NextRequest) {
       stock_quantity: Number(stock_quantity ?? 0),
       category: category ? String(category).trim() : null,
       image_url: image_url ? String(image_url).trim() : null,
+      length_cm: length_cm != null ? Number(length_cm) : null,
+      width_cm: width_cm != null ? Number(width_cm) : null,
+      height_cm: height_cm != null ? Number(height_cm) : null,
+      thickness_length_mm: thickness_length_mm != null ? Number(thickness_length_mm) : null,
+      thickness_width_mm: thickness_width_mm != null ? Number(thickness_width_mm) : null,
+      thickness_height_mm: thickness_height_mm != null ? Number(thickness_height_mm) : null,
+      is_hypothetical: Boolean(is_hypothetical),
       is_active: true,
     });
 

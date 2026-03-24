@@ -20,6 +20,7 @@ type Purchase = {
   subtotal: number; discount: number; tax: number; shipping_cost: number;
   currency: string; exchange_rate: number; total_cost: number;
   status: 'received' | 'pending' | 'cancelled'; notes: string | null;
+  delivery_days: number | null;
   items: PurchaseItem[];
 };
 
@@ -30,6 +31,11 @@ const fmtDate = (d: string) => {
   return isNaN(date.getTime()) ? d : date.toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 const todayISO = () => new Date().toISOString().slice(0, 10);
+
+function SortArrow({ col, sortBy, sortDir }: { col: string; sortBy: string; sortDir: 'asc' | 'desc' }) {
+  if (col !== sortBy) return <span className="ml-1 text-gray-300 dark:text-gray-600">↕</span>;
+  return <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+}
 
 const STATUS_BADGE: Record<string, string> = {
   received:  'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',
@@ -167,6 +173,7 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
   const [invoiceRef, setInvoiceRef] = useState('');
   const [status, setStatus] = useState<'received' | 'pending'>('received');
   const [notes, setNotes] = useState('');
+  const [deliveryDays, setDeliveryDays] = useState('');
   const [discount, setDiscount] = useState('0');
   const [discountIsPct, setDiscountIsPct] = useState(false);
   const [tax, setTax] = useState('0');
@@ -237,6 +244,7 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
           notes, purchase_date: purchaseDate,
           invoice_ref: invoiceRef || undefined,
           status,
+          delivery_days: deliveryDays ? Number(deliveryDays) : null,
         }),
       });
       if (!res.ok) { setError((await res.json()).error || 'Failed'); return; }
@@ -436,6 +444,13 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
             </div>
           </div>
 
+          {/* Delivery Time */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Delivery Time (days)</label>
+            <input type="number" min="0" value={deliveryDays} onChange={e => setDeliveryDays(e.target.value)} placeholder="e.g. 14"
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          </div>
+
           {/* Notes */}
           <div>
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Notes (optional)</label>
@@ -462,6 +477,7 @@ function EditPurchaseModal({ purchase, products, onClose, onSave }: {
 }) {
   const [status, setStatus] = useState(purchase.status);
   const [notes, setNotes] = useState(purchase.notes ?? '');
+  const [deliveryDays, setDeliveryDays] = useState(purchase.delivery_days != null ? String(purchase.delivery_days) : '');
   const [discount, setDiscount] = useState(String(purchase.discount));
   const [discountIsPct, setDiscountIsPct] = useState(false);
   const [tax, setTax] = useState(String(purchase.tax));
@@ -536,6 +552,7 @@ function EditPurchaseModal({ purchase, products, onClose, onSave }: {
           exchange_rate: rate,
           notes: notes.trim() || null,
           status,
+          delivery_days: deliveryDays ? Number(deliveryDays) : null,
         }),
       });
       if (!res.ok) { setError((await res.json()).error || 'Failed'); return; }
@@ -721,6 +738,13 @@ function EditPurchaseModal({ purchase, products, onClose, onSave }: {
             </div>
           )}
 
+          {/* Delivery Time */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Delivery Time (days)</label>
+            <input type="number" min="0" value={deliveryDays} onChange={e => setDeliveryDays(e.target.value)} placeholder="e.g. 14"
+              className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          </div>
+
           {/* Notes */}
           <div>
             <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Notes</label>
@@ -785,6 +809,8 @@ function PurchasesContent() {
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
   const [deletingPurchase, setDeletingPurchase] = useState<Purchase | null>(null);
+  const [sortBy, setSortBy] = useState<string>('purchase_date');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -800,12 +826,30 @@ function PurchasesContent() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  const toggleSort = (col: string) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(col); setSortDir('asc'); }
+  };
+
   const filteredPurchases = purchases.filter(p => {
     if (statusFilter !== 'all' && p.status !== statusFilter) return false;
     if (supplierFilter !== 'all' && String(p.supplier_id) !== supplierFilter) return false;
     if (search && !p.invoice_ref?.toLowerCase().includes(search.toLowerCase()) &&
         !p.supplier_name?.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
+  });
+
+  const sortedPurchases = [...filteredPurchases].sort((a, b) => {
+    let cmp = 0;
+    switch (sortBy) {
+      case 'invoice_ref': cmp = (a.invoice_ref || '').localeCompare(b.invoice_ref || ''); break;
+      case 'purchase_date': cmp = a.purchase_date.localeCompare(b.purchase_date); break;
+      case 'supplier_name': cmp = (a.supplier_name || '').localeCompare(b.supplier_name || ''); break;
+      case 'items': cmp = (a.items?.length || 0) - (b.items?.length || 0); break;
+      case 'total_cost': cmp = a.total_cost - b.total_cost; break;
+      case 'status': cmp = a.status.localeCompare(b.status); break;
+    }
+    return sortDir === 'asc' ? cmp : -cmp;
   });
 
   const totalSpend = purchases.filter(p => p.status === 'received').reduce((s, p) => s + p.total_cost, 0);
@@ -894,7 +938,7 @@ function PurchasesContent() {
           </div>
 
           <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
-            {filteredPurchases.length === 0 ? (
+            {sortedPurchases.length === 0 ? (
               <div className="text-center py-16 text-gray-400">
                 <svg className="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
                 <p className="font-medium">No purchase orders found</p>
@@ -905,17 +949,18 @@ function PurchasesContent() {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 dark:bg-gray-800 text-xs text-gray-500 uppercase tracking-wide">
                     <tr>
-                      <th className="px-5 py-3 text-left">PO Ref</th>
-                      <th className="px-5 py-3 text-left">Date</th>
-                      <th className="px-5 py-3 text-left">Supplier</th>
-                      <th className="px-5 py-3 text-right">Items</th>
-                      <th className="px-5 py-3 text-right">Total</th>
-                      <th className="px-5 py-3 text-center">Status</th>
+                      <th className="px-5 py-3 text-left cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('invoice_ref')}>PO Ref<SortArrow col="invoice_ref" sortBy={sortBy} sortDir={sortDir} /></th>
+                      <th className="px-5 py-3 text-left cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('purchase_date')}>Date<SortArrow col="purchase_date" sortBy={sortBy} sortDir={sortDir} /></th>
+                      <th className="px-5 py-3 text-left cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('supplier_name')}>Supplier<SortArrow col="supplier_name" sortBy={sortBy} sortDir={sortDir} /></th>
+                      <th className="px-5 py-3 text-right cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('items')}>Items<SortArrow col="items" sortBy={sortBy} sortDir={sortDir} /></th>
+                      <th className="px-5 py-3 text-right cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('total_cost')}>Total<SortArrow col="total_cost" sortBy={sortBy} sortDir={sortDir} /></th>
+                      <th className="px-5 py-3 text-center cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('status')}>Status<SortArrow col="status" sortBy={sortBy} sortDir={sortDir} /></th>
+                      <th className="px-5 py-3 text-center cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('delivery_days')}>Delivery<SortArrow col="delivery_days" sortBy={sortBy} sortDir={sortDir} /></th>
                       <th className="px-5 py-3"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-                    {filteredPurchases.map(p => (
+                    {sortedPurchases.map(p => (
                       <tr key={p.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                         <td className="px-5 py-3 font-mono text-xs font-medium text-gray-700 dark:text-gray-300">{p.invoice_ref}</td>
                         <td className="px-5 py-3 text-gray-600 dark:text-gray-400">{fmtDate(p.purchase_date)}</td>
@@ -924,6 +969,11 @@ function PurchasesContent() {
                         <td className="px-5 py-3 text-right font-semibold text-gray-900 dark:text-white">{fmt$(p.total_cost)}</td>
                         <td className="px-5 py-3 text-center">
                           <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_BADGE[p.status]}`}>{p.status}</span>
+                        </td>
+                        <td className="px-5 py-3 text-center text-gray-600 dark:text-gray-400">
+                          {p.delivery_days != null ? (
+                            <span className="text-xs">{p.delivery_days}d{p.status !== 'cancelled' && <span className="block text-gray-400">ETA {(() => { const d = new Date(p.purchase_date); d.setDate(d.getDate() + p.delivery_days); return d.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' }); })()}</span>}</span>
+                          ) : <span className="text-gray-300">&mdash;</span>}
                         </td>
                         <td className="px-5 py-3">
                           <div className="flex items-center justify-end gap-1">

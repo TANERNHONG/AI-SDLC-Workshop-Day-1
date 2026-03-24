@@ -24,6 +24,11 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${opt.color}`}>{opt.label}</span>;
 }
 
+function SortArrow({ col, sortBy, sortDir }: { col: string; sortBy: string; sortDir: 'asc' | 'desc' }) {
+  if (col !== sortBy) return <span className="ml-1 text-gray-300 dark:text-gray-600">↕</span>;
+  return <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+}
+
 export default function ShippingPage() {
   const [orders, setOrders] = useState<ShippingOrderWithPackages[]>([]);
   const [sales, setSales] = useState<SaleWithItems[]>([]);
@@ -37,6 +42,13 @@ export default function ShippingPage() {
 
   // Expanded order (for package management)
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [sortBy, setSortBy] = useState<string>('id');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const toggleSort = (col: string) => {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(col); setSortDir('asc'); }
+  };
 
   const fetchOrders = useCallback(async () => {
     const params = filterStatus !== 'all' ? `?status=${filterStatus}` : '';
@@ -122,19 +134,39 @@ export default function ShippingPage() {
         </div>
       )}
 
-      {/* Status filter */}
-      <div className="flex gap-2 flex-wrap">
-        {[{ value: 'all', label: 'All' }, ...STATUS_OPTIONS].map(opt => (
-          <button key={opt.value} onClick={() => setFilterStatus(opt.value)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${filterStatus === opt.value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 hover:border-indigo-400'}`}>
-            {opt.label}
-          </button>
-        ))}
+      {/* Sort & Status filter */}
+      <div className="flex gap-4 flex-wrap items-center">
+        <div className="flex gap-2 flex-wrap">
+          {[{ value: 'all', label: 'All' }, ...STATUS_OPTIONS].map(opt => (
+            <button key={opt.value} onClick={() => setFilterStatus(opt.value)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${filterStatus === opt.value ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700 hover:border-indigo-400'}`}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1 text-xs text-gray-500 ml-auto">
+          <span>Sort:</span>
+          {(['id', 'status', 'packages'] as const).map(col => (
+            <button key={col} onClick={() => toggleSort(col)}
+              className={`px-2 py-1 rounded text-xs font-medium transition ${sortBy === col ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+              {col === 'id' ? 'Order #' : col === 'packages' ? 'Packages' : 'Status'}
+              <SortArrow col={col} sortBy={sortBy} sortDir={sortDir} />
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Orders list */}
       <div className="space-y-3">
-        {orders.map(order => (
+        {[...orders].sort((a, b) => {
+          let cmp = 0;
+          switch (sortBy) {
+            case 'id': cmp = a.id - b.id; break;
+            case 'status': cmp = a.status.localeCompare(b.status); break;
+            case 'packages': cmp = a.packages.length - b.packages.length; break;
+          }
+          return sortDir === 'asc' ? cmp : -cmp;
+        }).map(order => (
           <div key={order.id} className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition"

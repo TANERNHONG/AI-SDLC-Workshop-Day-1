@@ -11,7 +11,6 @@ export async function middleware(request: NextRequest) {
 
   // Allow public routes (stock app has its own standalone access, no auth required)
   if (
-    pathname.startsWith('/login') ||
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/stock') ||
     pathname.startsWith('/api/stock')
@@ -23,14 +22,14 @@ export async function middleware(request: NextRequest) {
   const token = request.cookies.get('session')?.value;
 
   if (!token) {
-    return NextResponse.redirect(new URL('/login', request.url));
+    return NextResponse.redirect(new URL('/stock', request.url));
   }
 
   try {
     await jwtVerify(token, JWT_SECRET);
     return NextResponse.next();
   } catch (error) {
-    return NextResponse.redirect(new URL('/login', request.url));
+    return NextResponse.redirect(new URL('/stock', request.url));
   }
 }
 

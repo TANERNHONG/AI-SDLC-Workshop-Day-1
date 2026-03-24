@@ -133,17 +133,17 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4" style={{ 
-      backgroundColor: '#e8ecf1',
-      fontFamily: "'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+      backgroundColor: 'var(--page-bg)',
+      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
     }}>
       <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-lg p-8">
+        <div className="rounded-2xl shadow-lg p-8" style={{ backgroundColor: 'var(--card-bg)' }}>
           {/* Header */}
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold mb-2" style={{ color: '#1a202c' }}>
+            <h1 className="text-4xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
               Todo App
             </h1>
-            <p className="text-base" style={{ color: '#718096' }}>
+            <p className="text-base" style={{ color: 'var(--text-secondary)' }}>
               Sign in with your passkey
             </p>
           </div>
@@ -155,7 +155,7 @@ export default function LoginPage() {
               <label 
                 htmlFor="username" 
                 className="block text-sm font-medium mb-2"
-                style={{ color: '#2d3748' }}
+                style={{ color: 'var(--text-body)' }}
               >
                 Username
               </label>
@@ -167,17 +167,17 @@ export default function LoginPage() {
                 placeholder="Enter your username"
                 className="w-full px-4 py-3 rounded-lg border transition-all"
                 style={{
-                  backgroundColor: '#f7fafc',
-                  borderColor: '#e2e8f0',
-                  color: '#2d3748'
+                  backgroundColor: 'var(--input-bg)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-body)'
                 }}
                 onFocus={(e) => {
-                  e.target.style.borderColor = '#4285f4';
+                  e.target.style.borderColor = 'var(--accent-primary)';
                   e.target.style.outline = 'none';
-                  e.target.style.boxShadow = '0 0 0 3px rgba(66, 133, 244, 0.1)';
+                  e.target.style.boxShadow = '0 0 0 3px var(--focus-ring)';
                 }}
                 onBlur={(e) => {
-                  e.target.style.borderColor = '#e2e8f0';
+                  e.target.style.borderColor = 'var(--border-color)';
                   e.target.style.boxShadow = 'none';
                 }}
               />
@@ -202,13 +202,13 @@ export default function LoginPage() {
               disabled={loading}
               className="w-full py-3 rounded-lg font-medium text-white transition-all"
               style={{
-                backgroundColor: loading ? '#93c5fd' : '#4285f4'
+                backgroundColor: loading ? '#93c5fd' : 'var(--accent-primary)'
               }}
               onMouseEnter={(e) => {
-                if (!loading) e.currentTarget.style.backgroundColor = '#3367d6';
+                if (!loading) e.currentTarget.style.backgroundColor = 'var(--accent-primary-hover)';
               }}
               onMouseLeave={(e) => {
-                if (!loading) e.currentTarget.style.backgroundColor = '#4285f4';
+                if (!loading) e.currentTarget.style.backgroundColor = 'var(--accent-primary)';
               }}
             >
               {loading ? (
@@ -231,7 +231,7 @@ export default function LoginPage() {
                 onClick={handleRegister}
                 disabled={loading}
                 className="text-sm font-medium transition-all"
-                style={{ color: '#4285f4' }}
+                style={{ color: 'var(--accent-primary)' }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.textDecoration = 'underline';
                 }}
@@ -247,9 +247,9 @@ export default function LoginPage() {
           {/* Info Box */}
           <div 
             className="mt-8 p-4 rounded-lg text-sm leading-relaxed"
-            style={{ backgroundColor: '#f5f5f5', color: '#4a5568' }}
+            style={{ backgroundColor: 'var(--panel-bg)', color: 'var(--text-muted)' }}
           >
-            <strong className="font-semibold" style={{ color: '#2d3748' }}>Passkeys</strong> use your device&apos;s biometrics (fingerprint, face recognition) or PIN for secure authentication. No passwords needed!
+            <strong className="font-semibold" style={{ color: 'var(--text-body)' }}>Passkeys</strong> use your device&apos;s biometrics (fingerprint, face recognition) or PIN for secure authentication. No passwords needed!
           </div>
         </div>
       </div>
