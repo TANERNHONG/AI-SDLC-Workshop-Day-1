@@ -2014,4 +2014,431 @@ export const releaseEventDB = {
   },
 };
 
+// ─── Optimization Types ──────────────────────────────────────────────────────
+
+export interface OptimizationInput {
+  monthlyBudget: number;          // SGD budget for the planning month
+  leadTimeDays: number;           // shipping lead time in days (default 28 = 4 weeks)
+  serviceLevel: number;           // target service level 0-1 (default 0.95)
+  holdingCostPct: number;         // monthly holding cost as % of unit cost (default 5)
+  lookbackDays: number;           // days of history for demand estimation (default 90)
+  releaseBoostMultiplier: number; // demand boost when release event is near (default 1.5)
+  planningHorizonDays: number;    // days ahead to plan for (default 30)
+}
+
+export interface ProductOptimization {
+  product_id: number;
+  product_name: string;
+  sku: string;
+  category: string | null;
+  // Size info
+  length_cm: number | null;
+  width_cm: number | null;
+  height_cm: number | null;
+  size_group: string;             // e.g. "66x91mm" or "unique"
+  // Inventory
+  current_stock: number;
+  pending_stock: number;
+  // Cost
+  unit_cost_sgd: number;
+  selling_price: number;
+  unit_margin: number;
+  margin_pct: number;
+  // Demand
+  demand_mean: number;            // daily units (mu)
+  demand_stddev: number;          // daily units (sigma)
+  demand_cv: number;              // coefficient of variation (sigma/mu)
+  total_sold_period: number;
+  active_selling_days: number;
+  // Classification
+  product_type: 'evergreen' | 'rare' | 'discontinued';
+  has_upcoming_release: boolean;
+  release_event_name: string | null;
+  days_to_release: number | null;
+  // Optimization outputs
+  safety_stock: number;
+  reorder_point: number;
+  recommended_order_qty: number;
+  order_cost: number;             // recommended_order_qty × unit_cost_sgd
+  expected_profit: number;        // expected revenue - cost for the order
+  priority_score: number;         // composite ranking score
+  days_of_stock_left: number;     // -1 = infinite
+  stockout_risk: string;          // 'critical' | 'high' | 'medium' | 'low' | 'none'
+}
+
+export interface OptimizationResult {
+  generated_at: string;
+  params: OptimizationInput;
+  total_budget: number;
+  total_allocated: number;
+  budget_remaining: number;
+  products: ProductOptimization[];
+  size_group_summary: Array<{
+    size_group: string;
+    product_count: number;
+    pooled_safety_stock: number;
+    total_recommended: number;
+    total_cost: number;
+  }>;
+}
+
+// ─── Optimization Engine ─────────────────────────────────────────────────────
+
+export const optimizationDB = {
+  /**
+   * Runs the full profit-optimization engine.
+   *
+   * Mathematical framework:
+   * 1. Estimates demand distribution per product from historical sales
+   * 2. Classifies products (evergreen / rare / discontinued)
+   * 3. Computes safety stock using z-score × σ × √(lead_time)
+   * 4. Applies Newsvendor critical ratio for rare items
+   * 5. Scores products by ROI × urgency × release_boost × muda_penalty
+   * 6. Allocates budget greedily by priority score
+   */
+  run(input: Partial<OptimizationInput> = {}): OptimizationResult {
+    const params: OptimizationInput = {
+      monthlyBudget: input.monthlyBudget ?? 1000,
+      leadTimeDays: input.leadTimeDays ?? 28,
+      serviceLevel: input.serviceLevel ?? 0.95,
+      holdingCostPct: input.holdingCostPct ?? 5,
+      lookbackDays: input.lookbackDays ?? 90,
+      releaseBoostMultiplier: input.releaseBoostMultiplier ?? 1.5,
+      planningHorizonDays: input.planningHorizonDays ?? 30,
+    };
+
+    const zScore = _normalZInverse(params.serviceLevel);
+    const leadTimeInPlanUnits = params.leadTimeDays / params.planningHorizonDays;
+
+    // 1. Fetch active products
+    const allProducts = productDB.list(false);
+    const stockMap = productDB.getComputedStockAll();
+    const pendingMap = productDB.getPendingStockAll();
+
+    // 2. Fetch sales history for demand estimation
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - params.lookbackDays);
+    const startStr = startDate.toISOString().slice(0, 10);
+    const endStr = endDate.toISOString().slice(0, 10);
+
+    // Daily sales per product
+    const dailySales = db.prepare(`
+      SELECT si.product_id, date(s.sale_date) AS sale_date,
+             SUM(si.quantity - si.refunded_quantity) AS qty
+      FROM sale_items si
+      INNER JOIN sales s ON s.id = si.sale_id
+      WHERE s.status IN ('completed', 'partial_refund')
+        AND s.sale_date >= ? AND s.sale_date <= ?
+      GROUP BY si.product_id, date(s.sale_date)
+    `).all(startStr, endStr + ' 23:59:59') as Array<{ product_id: number; sale_date: string; qty: number }>;
+
+    // Build daily lookup per product
+    const salesByProduct = new Map<number, number[]>();
+    const dateSet = new Set<string>();
+    const cur = new Date(startStr);
+    const endD = new Date(endStr);
+    while (cur <= endD) {
+      dateSet.add(cur.toISOString().slice(0, 10));
+      cur.setDate(cur.getDate() + 1);
+    }
+    const totalDays = dateSet.size || 1;
+
+    for (const r of dailySales) {
+      if (!salesByProduct.has(r.product_id)) salesByProduct.set(r.product_id, []);
+      salesByProduct.get(r.product_id)!.push(r.qty);
+    }
+
+    // 3. Fetch upcoming release events (within planning horizon + lead time)
+    const planHorizonEnd = new Date();
+    planHorizonEnd.setDate(planHorizonEnd.getDate() + params.planningHorizonDays + params.leadTimeDays);
+    const releaseEvents = releaseEventDB.list();
+    const productReleaseMap = new Map<number, { name: string; daysTo: number }>();
+    const todayMs = Date.now();
+    for (const ev of releaseEvents) {
+      const relDate = new Date(ev.release_date);
+      const daysTo = Math.ceil((relDate.getTime() - todayMs) / 86400000);
+      if (daysTo < -10 || daysTo > params.planningHorizonDays + params.leadTimeDays) continue;
+      for (const p of ev.products) {
+        const existing = productReleaseMap.get(p.id);
+        if (!existing || daysTo < existing.daysTo) {
+          productReleaseMap.set(p.id, { name: ev.name, daysTo });
+        }
+      }
+    }
+
+    // 4. Compute per-product optimization
+    const optimized: ProductOptimization[] = allProducts.map(product => {
+      const currentStock = stockMap.get(product.id) ?? 0;
+      const pendingStock = pendingMap.get(product.id) ?? 0;
+      const unitCostSGD = product.cost * (product.cost_exchange_rate || 1);
+      const unitMargin = product.price - unitCostSGD;
+      const marginPct = product.price > 0 ? (unitMargin / product.price) * 100 : 0;
+
+      // Demand estimation
+      const dailyQtys = salesByProduct.get(product.id) ?? [];
+      const totalSold = dailyQtys.reduce((s, q) => s + q, 0);
+      const activeDays = dailyQtys.length || 0;
+      const demandMean = totalDays > 0 ? totalSold / totalDays : 0;    // daily average
+      const demandStddev = _stddev(dailyQtys, demandMean, totalDays);
+      const demandCV = demandMean > 0 ? demandStddev / demandMean : 0;
+
+      // Size group classification
+      const sizeGroup = _getSizeGroup(product);
+
+      // Product type classification
+      let productType: 'evergreen' | 'rare' | 'discontinued' = 'evergreen';
+      if (!product.is_active) {
+        productType = 'discontinued';
+      } else if (demandCV > 2.0 || (activeDays < totalDays * 0.1 && totalSold > 0)) {
+        productType = 'rare';   // very sporadic sales → likely rare product
+      }
+
+      // Release event context
+      const release = productReleaseMap.get(product.id);
+      const hasUpcomingRelease = !!release && release.daysTo >= 0;
+      const releaseBoost = hasUpcomingRelease ? params.releaseBoostMultiplier : 1.0;
+
+      // Adjusted demand for planning horizon (daily rate × horizon × release boost)
+      const horizonDemand = demandMean * params.planningHorizonDays * releaseBoost;
+
+      // Safety stock: z × σ_daily × √(lead_time_days) × release_boost
+      let safetyStock: number;
+      if (productType === 'rare') {
+        // Newsvendor: critical ratio = (p - c) / (p - c + h)
+        const holdingCost = unitCostSGD * (params.holdingCostPct / 100);
+        const criticalRatio = unitMargin > 0
+          ? unitMargin / (unitMargin + holdingCost)
+          : 0.5;
+        // Use Poisson-style: order up to the quantile of expected demand
+        const lambda = horizonDemand;
+        safetyStock = Math.ceil(_poissonQuantile(lambda, criticalRatio));
+      } else {
+        safetyStock = Math.ceil(zScore * demandStddev * Math.sqrt(params.leadTimeDays) * releaseBoost);
+      }
+
+      // Reorder point
+      const reorderPoint = Math.ceil(demandMean * params.leadTimeDays * releaseBoost + safetyStock);
+
+      // Recommended order quantity
+      const effectiveStock = currentStock + pendingStock;
+      let recommendedQty = Math.max(0, reorderPoint + Math.ceil(horizonDemand) - effectiveStock);
+
+      // For discontinued items: only stock if profitable
+      if (productType === 'discontinued') {
+        recommendedQty = Math.max(0, safetyStock - effectiveStock);
+      }
+
+      const orderCost = recommendedQty * unitCostSGD;
+      const expectedProfit = recommendedQty * unitMargin;
+
+      // Days of stock left
+      const daysLeft = demandMean > 0 ? effectiveStock / (demandMean * releaseBoost) : -1;
+
+      // Stockout risk
+      let stockoutRisk: string = 'none';
+      if (demandMean > 0) {
+        if (daysLeft >= 0 && daysLeft <= 7) stockoutRisk = 'critical';
+        else if (daysLeft >= 0 && daysLeft <= 14) stockoutRisk = 'high';
+        else if (daysLeft >= 0 && daysLeft <= params.leadTimeDays) stockoutRisk = 'medium';
+        else stockoutRisk = 'low';
+      }
+
+      // Priority score = (margin/cost) × (demand/stock+1) × release_boost × e^(-β×overstock)
+      const roi = unitCostSGD > 0 ? unitMargin / unitCostSGD : 0;
+      const urgency = (horizonDemand + 1) / (effectiveStock + 1);
+      const overstockRatio = effectiveStock > 0 && horizonDemand > 0
+        ? Math.max(0, (effectiveStock - horizonDemand) / horizonDemand)
+        : 0;
+      const mudaPenalty = Math.exp(-0.5 * overstockRatio);
+      const priorityScore = Math.max(0, roi * urgency * releaseBoost * mudaPenalty);
+
+      return {
+        product_id: product.id,
+        product_name: product.name,
+        sku: product.sku,
+        category: product.category,
+        length_cm: product.length_cm,
+        width_cm: product.width_cm,
+        height_cm: product.height_cm,
+        size_group: sizeGroup,
+        current_stock: currentStock,
+        pending_stock: pendingStock,
+        unit_cost_sgd: Math.round(unitCostSGD * 100) / 100,
+        selling_price: product.price,
+        unit_margin: Math.round(unitMargin * 100) / 100,
+        margin_pct: Math.round(marginPct * 10) / 10,
+        demand_mean: Math.round(demandMean * 1000) / 1000,
+        demand_stddev: Math.round(demandStddev * 1000) / 1000,
+        demand_cv: Math.round(demandCV * 100) / 100,
+        total_sold_period: totalSold,
+        active_selling_days: activeDays,
+        product_type: productType,
+        has_upcoming_release: hasUpcomingRelease,
+        release_event_name: release?.name ?? null,
+        days_to_release: release?.daysTo ?? null,
+        safety_stock: safetyStock,
+        reorder_point: reorderPoint,
+        recommended_order_qty: recommendedQty,
+        order_cost: Math.round(orderCost * 100) / 100,
+        expected_profit: Math.round(expectedProfit * 100) / 100,
+        priority_score: Math.round(priorityScore * 10000) / 10000,
+        days_of_stock_left: daysLeft >= 0 ? Math.round(daysLeft * 10) / 10 : -1,
+        stockout_risk: stockoutRisk,
+      };
+    });
+
+    // 5. Sort by priority score descending, allocate budget greedily
+    optimized.sort((a, b) => b.priority_score - a.priority_score);
+
+    let budgetRemaining = params.monthlyBudget;
+    for (const p of optimized) {
+      if (p.recommended_order_qty === 0 || p.order_cost === 0) continue;
+      if (p.order_cost <= budgetRemaining) {
+        budgetRemaining -= p.order_cost;
+      } else {
+        // Partial: buy as many as budget allows
+        const affordable = Math.floor(budgetRemaining / p.unit_cost_sgd);
+        p.recommended_order_qty = affordable;
+        p.order_cost = Math.round(affordable * p.unit_cost_sgd * 100) / 100;
+        p.expected_profit = Math.round(affordable * p.unit_margin * 100) / 100;
+        budgetRemaining -= p.order_cost;
+      }
+    }
+
+    // 6. Size group pooling summary
+    const sizeGroups = new Map<string, { products: ProductOptimization[] }>();
+    for (const p of optimized) {
+      if (!sizeGroups.has(p.size_group)) sizeGroups.set(p.size_group, { products: [] });
+      sizeGroups.get(p.size_group)!.products.push(p);
+    }
+
+    const sizeGroupSummary = Array.from(sizeGroups.entries()).map(([group, data]) => {
+      // Pooled safety stock: z × √(Σ σ²) × √(lead_time)
+      const sumVariance = data.products.reduce((s, p) => s + p.demand_stddev ** 2, 0);
+      const pooledSS = Math.ceil(zScore * Math.sqrt(sumVariance) * Math.sqrt(params.leadTimeDays));
+      const individualSSTotal = data.products.reduce((s, p) => s + p.safety_stock, 0);
+      return {
+        size_group: group,
+        product_count: data.products.length,
+        pooled_safety_stock: pooledSS,
+        individual_safety_stock_total: individualSSTotal,
+        total_recommended: data.products.reduce((s, p) => s + p.recommended_order_qty, 0),
+        total_cost: Math.round(data.products.reduce((s, p) => s + p.order_cost, 0) * 100) / 100,
+      };
+    }).sort((a, b) => b.total_cost - a.total_cost);
+
+    const totalAllocated = params.monthlyBudget - budgetRemaining;
+
+    return {
+      generated_at: new Date().toISOString(),
+      params,
+      total_budget: params.monthlyBudget,
+      total_allocated: Math.round(totalAllocated * 100) / 100,
+      budget_remaining: Math.round(budgetRemaining * 100) / 100,
+      products: optimized,
+      size_group_summary: sizeGroupSummary,
+    };
+  },
+};
+
+// ─── Math Helpers ────────────────────────────────────────────────────────────
+
+/** Standard deviation of daily sales (filling zero-sale days) */
+function _stddev(dailyQtys: number[], dailyMean: number, totalDays: number): number {
+  if (totalDays <= 1) return 0;
+  // Fill zero-sale days
+  const zeroDays = totalDays - dailyQtys.length;
+  let sumSqDiff = 0;
+  for (const q of dailyQtys) {
+    sumSqDiff += (q - dailyMean) ** 2;
+  }
+  sumSqDiff += zeroDays * (dailyMean ** 2); // zero-sale days: (0 - mean)^2
+  return Math.sqrt(sumSqDiff / (totalDays - 1));
+}
+
+/** Approximate inverse normal CDF (Beasley-Springer-Moro algorithm) */
+function _normalZInverse(p: number): number {
+  if (p <= 0) return -3.5;
+  if (p >= 1) return 3.5;
+  if (p === 0.5) return 0;
+
+  const a = [
+    -3.969683028665376e+01, 2.209460984245205e+02,
+    -2.759285104469687e+02, 1.383577518672690e+02,
+    -3.066479806614716e+01, 2.506628277459239e+00,
+  ];
+  const b = [
+    -5.447609879822406e+01, 1.615858368580409e+02,
+    -1.556989798598866e+02, 6.680131188771972e+01,
+    -1.328068155288572e+01,
+  ];
+  const c = [
+    -7.784894002430293e-03, -3.223964580411365e-01,
+    -2.400758277161838e+00, -2.549732539343734e+00,
+    4.374664141464968e+00, 2.938163982698783e+00,
+  ];
+  const d = [
+    7.784695709041462e-03, 3.224671290700398e-01,
+    2.445134137142996e+00, 3.754408661907416e+00,
+  ];
+
+  const pLow = 0.02425;
+  const pHigh = 1 - pLow;
+
+  let q: number, r: number;
+
+  if (p < pLow) {
+    q = Math.sqrt(-2 * Math.log(p));
+    return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+           ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+  } else if (p <= pHigh) {
+    q = p - 0.5;
+    r = q * q;
+    return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q /
+           (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+  } else {
+    q = Math.sqrt(-2 * Math.log(1 - p));
+    return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+            ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+  }
+}
+
+/** Poisson quantile (inverse CDF) via cumulative probability */
+function _poissonQuantile(lambda: number, p: number): number {
+  if (lambda <= 0) return 0;
+  let cumulativeP = 0;
+  let k = 0;
+  const maxK = Math.ceil(lambda + 10 * Math.sqrt(lambda)) + 50;
+  let logLambda = Math.log(lambda);
+  let logFactK = 0; // log(k!)
+
+  while (k <= maxK) {
+    const logPmf = k * logLambda - lambda - logFactK;
+    cumulativeP += Math.exp(logPmf);
+    if (cumulativeP >= p) return k;
+    k++;
+    logFactK += Math.log(k);
+  }
+  return k;
+}
+
+/** Classify product into a size group based on dimensions */
+function _getSizeGroup(product: Product): string {
+  const l = product.length_cm;
+  const w = product.width_cm;
+  const h = product.height_cm;
+  if (l == null || w == null) return 'unspecified';
+
+  // Round to nearest 0.5 for grouping
+  const rl = Math.round(l * 2) / 2;
+  const rw = Math.round(w * 2) / 2;
+
+  if (h != null && h > 0.5) {
+    const rh = Math.round(h * 2) / 2;
+    return `${rl}×${rw}×${rh}cm`;
+  }
+  return `${rl}×${rw}cm`;
+}
+
 export default db;

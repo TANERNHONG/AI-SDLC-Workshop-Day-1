@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { Product, ReleaseEventWithProducts, PurchaseWithItems } from '@/lib/stockdb';
+import type { Product, ReleaseEventWithProducts, PurchaseWithItems, OptimizationResult, ProductOptimization } from '@/lib/stockdb';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -271,6 +271,274 @@ function SeriesBadge({ series }: { series: string | null }) {
   );
 }
 
+// ── Risk badge colors ─────────────────────────────────────────────────────────
+const RISK_COLORS: Record<string, string> = {
+  critical: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
+  high:     'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300',
+  medium:   'bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300',
+  low:      'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
+  none:     'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+};
+const TYPE_COLORS: Record<string, string> = {
+  evergreen:    'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+  rare:         'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300',
+  discontinued: 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
+};
+
+// ── Profit Optimizer Panel ────────────────────────────────────────────────────
+
+function ProfitOptimizer() {
+  const [result, setResult] = useState<OptimizationResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [showSizeGroups, setShowSizeGroups] = useState(false);
+  const [params, setParams] = useState({
+    budget: 1000,
+    leadTime: 28,
+    serviceLevel: 0.95,
+    holdingCost: 5,
+    lookback: 90,
+    releaseBoost: 1.5,
+    horizon: 30,
+  });
+
+  const runOptimizer = useCallback(async () => {
+    setLoading(true);
+    try {
+      const qs = new URLSearchParams({
+        budget: String(params.budget),
+        leadTime: String(params.leadTime),
+        serviceLevel: String(params.serviceLevel),
+        holdingCost: String(params.holdingCost),
+        lookback: String(params.lookback),
+        releaseBoost: String(params.releaseBoost),
+        horizon: String(params.horizon),
+      });
+      const res = await fetch(`/api/stock/optimization?${qs}`);
+      if (!res.ok) throw new Error('Failed');
+      const data = await res.json();
+      setResult(data);
+      setExpanded(true);
+    } catch {
+      setResult(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [params]);
+
+  const actionableProducts = result?.products.filter(p => p.recommended_order_qty > 0) ?? [];
+  const totalExpectedProfit = actionableProducts.reduce((s, p) => s + p.expected_profit, 0);
+
+  return (
+    <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-800">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center text-white text-lg">⚡</div>
+          <div>
+            <h3 className="text-base font-bold text-gray-900 dark:text-white">Profit Optimizer</h3>
+            <p className="text-xs text-gray-400">Budget-constrained order recommendations</p>
+          </div>
+        </div>
+        <button
+          onClick={runOptimizer}
+          disabled={loading}
+          className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-sm font-semibold text-white transition-colors"
+        >
+          {loading ? 'Running…' : result ? 'Re-run' : 'Run Optimizer'}
+        </button>
+      </div>
+
+      {/* Parameters (collapsible) */}
+      <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+          <div>
+            <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Budget (SGD)</label>
+            <input type="number" min={0} step={100} value={params.budget} onChange={e => setParams({...params, budget: +e.target.value})}
+              className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent" />
+          </div>
+          <div>
+            <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Lead Time (days)</label>
+            <input type="number" min={1} max={90} value={params.leadTime} onChange={e => setParams({...params, leadTime: +e.target.value})}
+              className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent" />
+          </div>
+          <div>
+            <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Service Level</label>
+            <select value={params.serviceLevel} onChange={e => setParams({...params, serviceLevel: +e.target.value})}
+              className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent">
+              <option value={0.90}>90%</option>
+              <option value={0.95}>95%</option>
+              <option value={0.99}>99%</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Holding Cost %</label>
+            <input type="number" min={0} max={50} step={1} value={params.holdingCost} onChange={e => setParams({...params, holdingCost: +e.target.value})}
+              className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent" />
+          </div>
+          <div>
+            <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Lookback (days)</label>
+            <input type="number" min={7} max={365} value={params.lookback} onChange={e => setParams({...params, lookback: +e.target.value})}
+              className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent" />
+          </div>
+          <div>
+            <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Release Boost</label>
+            <input type="number" min={1} max={5} step={0.1} value={params.releaseBoost} onChange={e => setParams({...params, releaseBoost: +e.target.value})}
+              className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent" />
+          </div>
+          <div>
+            <label className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">Horizon (days)</label>
+            <input type="number" min={7} max={90} value={params.horizon} onChange={e => setParams({...params, horizon: +e.target.value})}
+              className="w-full px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-transparent" />
+          </div>
+        </div>
+      </div>
+
+      {/* Results */}
+      {result && (
+        <div className="px-5 py-4 space-y-4">
+          {/* Summary cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="rounded-xl bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-800 px-4 py-3">
+              <p className="text-[10px] font-semibold text-violet-500 uppercase tracking-wide">Budget Used</p>
+              <p className="text-lg font-bold text-violet-700 dark:text-violet-300">${result.total_allocated.toFixed(2)}</p>
+              <p className="text-xs text-violet-400">of ${result.total_budget.toFixed(2)}</p>
+            </div>
+            <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 px-4 py-3">
+              <p className="text-[10px] font-semibold text-emerald-500 uppercase tracking-wide">Expected Profit</p>
+              <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300">${totalExpectedProfit.toFixed(2)}</p>
+              <p className="text-xs text-emerald-400">{result.total_allocated > 0 ? ((totalExpectedProfit / result.total_allocated) * 100).toFixed(0) : 0}% ROI</p>
+            </div>
+            <div className="rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-4 py-3">
+              <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wide">Products to Order</p>
+              <p className="text-lg font-bold text-amber-700 dark:text-amber-300">{actionableProducts.length}</p>
+              <p className="text-xs text-amber-400">of {result.products.length} active</p>
+            </div>
+            <div className="rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 px-4 py-3">
+              <p className="text-[10px] font-semibold text-red-500 uppercase tracking-wide">Stockout Risks</p>
+              <p className="text-lg font-bold text-red-700 dark:text-red-300">
+                {result.products.filter(p => p.stockout_risk === 'critical' || p.stockout_risk === 'high').length}
+              </p>
+              <p className="text-xs text-red-400">critical + high</p>
+            </div>
+          </div>
+
+          {/* Size group summary toggle */}
+          <div>
+            <button onClick={() => setShowSizeGroups(!showSizeGroups)}
+              className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline">
+              {showSizeGroups ? '▼' : '▶'} Size Group Analysis ({result.size_group_summary.length} groups)
+            </button>
+            {showSizeGroups && (
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-gray-400 uppercase tracking-wide border-b border-gray-100 dark:border-gray-800">
+                      <th className="pb-2 pr-4 font-semibold">Size Group</th>
+                      <th className="pb-2 pr-4 font-semibold text-right">Products</th>
+                      <th className="pb-2 pr-4 font-semibold text-right">Pooled SS</th>
+                      <th className="pb-2 pr-4 font-semibold text-right">Order Qty</th>
+                      <th className="pb-2 font-semibold text-right">Order Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
+                    {result.size_group_summary.map(sg => (
+                      <tr key={sg.size_group} className="text-gray-700 dark:text-gray-300">
+                        <td className="py-2 pr-4 font-mono font-medium">{sg.size_group}</td>
+                        <td className="py-2 pr-4 text-right">{sg.product_count}</td>
+                        <td className="py-2 pr-4 text-right">{sg.pooled_safety_stock}</td>
+                        <td className="py-2 pr-4 text-right">{sg.total_recommended}</td>
+                        <td className="py-2 text-right font-medium">${sg.total_cost.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Expand/collapse product table */}
+          <button onClick={() => setExpanded(!expanded)}
+            className="text-xs font-semibold text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+            {expanded ? '▼ Hide' : '▶ Show'} Product Recommendations
+          </button>
+
+          {expanded && (
+            <div className="overflow-x-auto -mx-5">
+              <table className="w-full text-xs min-w-[900px]">
+                <thead>
+                  <tr className="text-left text-gray-400 uppercase tracking-wide border-b border-gray-100 dark:border-gray-800">
+                    <th className="pb-2 pl-5 pr-3 font-semibold">Product</th>
+                    <th className="pb-2 px-2 font-semibold">Type</th>
+                    <th className="pb-2 px-2 font-semibold">Risk</th>
+                    <th className="pb-2 px-2 font-semibold text-right">Stock</th>
+                    <th className="pb-2 px-2 font-semibold text-right">μ/day</th>
+                    <th className="pb-2 px-2 font-semibold text-right">σ/day</th>
+                    <th className="pb-2 px-2 font-semibold text-right">CV</th>
+                    <th className="pb-2 px-2 font-semibold text-right">SS</th>
+                    <th className="pb-2 px-2 font-semibold text-right">ROP</th>
+                    <th className="pb-2 px-2 font-semibold text-right">Order</th>
+                    <th className="pb-2 px-2 font-semibold text-right">Cost</th>
+                    <th className="pb-2 px-2 font-semibold text-right">Exp. Profit</th>
+                    <th className="pb-2 px-2 font-semibold text-right">Score</th>
+                    <th className="pb-2 pr-5 font-semibold">Release</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
+                  {result.products.map(p => (
+                    <tr key={p.product_id} className={`text-gray-700 dark:text-gray-300 ${p.recommended_order_qty > 0 ? '' : 'opacity-40'}`}>
+                      <td className="py-2 pl-5 pr-3">
+                        <div className="font-medium text-gray-900 dark:text-white truncate max-w-[180px]" title={p.product_name}>{p.product_name}</div>
+                        <div className="text-gray-400 font-mono">{p.sku}</div>
+                      </td>
+                      <td className="py-2 px-2">
+                        <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${TYPE_COLORS[p.product_type]}`}>
+                          {p.product_type}
+                        </span>
+                      </td>
+                      <td className="py-2 px-2">
+                        <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${RISK_COLORS[p.stockout_risk]}`}>
+                          {p.stockout_risk}
+                        </span>
+                      </td>
+                      <td className="py-2 px-2 text-right font-mono">
+                        {p.current_stock}
+                        {p.pending_stock > 0 && <span className="text-emerald-500 ml-0.5">(+{p.pending_stock})</span>}
+                      </td>
+                      <td className="py-2 px-2 text-right font-mono">{p.demand_mean.toFixed(2)}</td>
+                      <td className="py-2 px-2 text-right font-mono">{p.demand_stddev.toFixed(2)}</td>
+                      <td className="py-2 px-2 text-right font-mono">{p.demand_cv.toFixed(1)}</td>
+                      <td className="py-2 px-2 text-right font-mono">{p.safety_stock}</td>
+                      <td className="py-2 px-2 text-right font-mono">{p.reorder_point}</td>
+                      <td className="py-2 px-2 text-right font-mono font-bold">{p.recommended_order_qty > 0 ? p.recommended_order_qty : '—'}</td>
+                      <td className="py-2 px-2 text-right font-mono">{p.order_cost > 0 ? `$${p.order_cost.toFixed(2)}` : '—'}</td>
+                      <td className="py-2 px-2 text-right font-mono">
+                        {p.expected_profit > 0
+                          ? <span className="text-emerald-600 dark:text-emerald-400">${p.expected_profit.toFixed(2)}</span>
+                          : p.expected_profit < 0
+                          ? <span className="text-red-600 dark:text-red-400">-${Math.abs(p.expected_profit).toFixed(2)}</span>
+                          : '—'}
+                      </td>
+                      <td className="py-2 px-2 text-right font-mono">{p.priority_score > 0 ? p.priority_score.toFixed(2) : '—'}</td>
+                      <td className="py-2 pr-5 text-right">
+                        {p.has_upcoming_release && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                            🚀 {p.days_to_release}d
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Calendar Page ────────────────────────────────────────────────────────
 
 export default function ReleaseCalendarPage() {
@@ -462,6 +730,9 @@ export default function ReleaseCalendarPage() {
             </div>
           </div>
         )}
+
+        {/* Profit Optimizer */}
+        <ProfitOptimizer />
 
         {view === 'calendar' ? (
         /* ── Calendar View ── */
