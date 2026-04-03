@@ -1,5 +1,14 @@
 import Database from 'better-sqlite3';
 import path from 'path';
+import {
+  MARKET_ANALYSIS_DECISIONS,
+  createEmptyMarketTable,
+  type MarketAnalysisCriteria,
+  type MarketAnalysisDecision,
+  type MarketAnalysisMapping,
+  type MarketAnalysisRecord,
+  type MarketAnalysisTable,
+} from './market-analysis-types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -363,6 +372,34 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_release_events_date ON release_events(release_date);
   CREATE INDEX IF NOT EXISTS idx_release_event_products_event ON release_event_products(release_event_id);
   CREATE INDEX IF NOT EXISTS idx_release_event_products_prod ON release_event_products(product_id);
+
+  CREATE TABLE IF NOT EXISTS market_analysis_criteria (
+    id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name                       TEXT NOT NULL,
+    description                TEXT,
+    market_product_table_json  TEXT NOT NULL DEFAULT '{"columns":[],"rows":[]}',
+    product_table_json         TEXT NOT NULL DEFAULT '{"columns":[],"rows":[]}',
+    mapping_table_json         TEXT NOT NULL DEFAULT '[]',
+    viability_notes            TEXT,
+    predicted_roi_pct          REAL,
+    created_at                 TEXT DEFAULT (datetime('now')),
+    updated_at                 TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS market_analyses (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    name              TEXT DEFAULT '',
+    criteria_id       INTEGER DEFAULT 0,
+    description       TEXT,
+    viability_status  TEXT NOT NULL DEFAULT 'review',
+    predicted_roi_pct REAL,
+    summary           TEXT,
+    created_at        TEXT DEFAULT (datetime('now')),
+    updated_at        TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_market_analysis_criteria_name ON market_analysis_criteria(name);
+  CREATE INDEX IF NOT EXISTS idx_market_analyses_criteria ON market_analyses(criteria_id);
 `);
 
 // ─── Migrations ──────────────────────────────────────────────────────────────
@@ -389,6 +426,35 @@ try { db.exec('ALTER TABLE products ADD COLUMN thickness_width_mm REAL'); } catc
 try { db.exec('ALTER TABLE products ADD COLUMN thickness_height_mm REAL'); } catch { /* already exists */ }
 try { db.exec('ALTER TABLE products ADD COLUMN is_hypothetical INTEGER NOT NULL DEFAULT 0'); } catch { /* already exists */ }
 try { db.exec('ALTER TABLE purchases ADD COLUMN delivery_days INTEGER'); } catch { /* already exists */ }
+try { db.exec("ALTER TABLE market_analyses ADD COLUMN combination_table_json TEXT NOT NULL DEFAULT '{}'"); } catch { /* already exists */ }
+
+// Relax name / criteria_id NOT NULL on existing market_analyses tables
+try {
+  const info = db.prepare("PRAGMA table_info(market_analyses)").all() as any[];
+  const nameCol = info.find((c: any) => c.name === 'name');
+  if (nameCol && nameCol.notnull === 1) {
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE market_analyses_tmp (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT DEFAULT '',
+          criteria_id INTEGER DEFAULT 0,
+          description TEXT,
+          viability_status TEXT NOT NULL DEFAULT 'review',
+          predicted_roi_pct REAL,
+          summary TEXT,
+          combination_table_json TEXT NOT NULL DEFAULT '{}',
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        )
+      `);
+      db.exec("INSERT INTO market_analyses_tmp SELECT id, name, criteria_id, description, viability_status, predicted_roi_pct, summary, combination_table_json, created_at, updated_at FROM market_analyses");
+      db.exec("DROP TABLE market_analyses");
+      db.exec("ALTER TABLE market_analyses_tmp RENAME TO market_analyses");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_market_analyses_criteria ON market_analyses(criteria_id)");
+    })();
+  }
+} catch { /* already migrated or fresh DB */ }
 
 // ─── Product DB ──────────────────────────────────────────────────────────────
 
@@ -2011,6 +2077,315 @@ export const releaseEventDB = {
     for (const pid of productIds) {
       insert.run(releaseEventId, pid);
     }
+  },
+};
+
+function normalizeMarketAnalysisTable(table?: MarketAnalysisTable | null): MarketAnalysisTable {
+  const columns = Array.isArray(table?.columns)
+    ? table.columns.map((column, index) => ({
+        id: String(column?.id || `column-${index + 1}`),
+        name: String(column?.name || `Column ${index + 1}`),
+      }))
+    : [];
+
+  const rows = Array.isArray(table?.rows)
+    ? table.rows.map((row, rowIndex) => ({
+        id: String(row?.id || `row-${rowIndex + 1}`),
+        values: Object.fromEntries(
+          columns.map((column) => [column.id, String(row?.values?.[column.id] ?? '')])
+        ),
+      }))
+    : [];
+
+  return { columns, rows };
+}
+
+function normalizeMarketAnalysisMappings(mappings?: MarketAnalysisMapping[] | null): MarketAnalysisMapping[] {
+  if (!Array.isArray(mappings)) {
+    return [];
+  }
+
+  return mappings.map((mapping, index) => ({
+    id: String(mapping?.id || `mapping-${index + 1}`),
+    marketColumnId: String(mapping?.marketColumnId ?? ''),
+    productColumnId: String(mapping?.productColumnId ?? ''),
+    relation: mapping?.relation ? String(mapping.relation) : null,
+  }));
+}
+
+function parseMarketAnalysisTable(text?: string | null): MarketAnalysisTable {
+  try {
+    return normalizeMarketAnalysisTable(JSON.parse(text ?? ''));
+  } catch {
+    return createEmptyMarketTable();
+  }
+}
+
+function parseMarketAnalysisMappings(text?: string | null): MarketAnalysisMapping[] {
+  try {
+    return normalizeMarketAnalysisMappings(JSON.parse(text ?? '[]'));
+  } catch {
+    return [];
+  }
+}
+
+function mapMarketCriteriaRow(row: any): MarketAnalysisCriteria {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description ?? null,
+    market_product_table: parseMarketAnalysisTable(row.market_product_table_json),
+    product_table: parseMarketAnalysisTable(row.product_table_json),
+    mapping_table: parseMarketAnalysisMappings(row.mapping_table_json),
+    viability_notes: row.viability_notes ?? null,
+    predicted_roi_pct: row.predicted_roi_pct != null ? Number(row.predicted_roi_pct) : null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function parseCombinationTable(text?: string | null): Record<string, string> {
+  try {
+    const parsed = JSON.parse(text ?? '{}');
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const result: Record<string, string> = {};
+      for (const [key, value] of Object.entries(parsed)) {
+        result[key] = String(value ?? '');
+      }
+      return result;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+function mapMarketAnalysisRow(row: any): MarketAnalysisRecord {
+  const viability = MARKET_ANALYSIS_DECISIONS.includes(row.viability_status as MarketAnalysisDecision)
+    ? row.viability_status as MarketAnalysisDecision
+    : 'review';
+
+  return {
+    id: row.id,
+    name: row.name,
+    criteria_id: row.criteria_id,
+    criteria_name: row.criteria_name,
+    description: row.description ?? null,
+    viability_status: viability,
+    predicted_roi_pct: row.predicted_roi_pct != null ? Number(row.predicted_roi_pct) : null,
+    summary: row.summary ?? null,
+    combination_table: parseCombinationTable(row.combination_table_json),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export const marketAnalysisDB = {
+  listCriteria(): MarketAnalysisCriteria[] {
+    const rows = db.prepare('SELECT * FROM market_analysis_criteria ORDER BY updated_at DESC, name ASC').all() as any[];
+    return rows.map(mapMarketCriteriaRow);
+  },
+
+  getCriteriaById(id: number): MarketAnalysisCriteria | undefined {
+    const row = db.prepare('SELECT * FROM market_analysis_criteria WHERE id = ?').get(id) as any;
+    return row ? mapMarketCriteriaRow(row) : undefined;
+  },
+
+  createCriteria(data: {
+    name: string;
+    description?: string | null;
+    market_product_table?: MarketAnalysisTable;
+    product_table?: MarketAnalysisTable;
+    mapping_table?: MarketAnalysisMapping[];
+    viability_notes?: string | null;
+    predicted_roi_pct?: number | null;
+  }): MarketAnalysisCriteria {
+    const result = db.prepare(`
+      INSERT INTO market_analysis_criteria (
+        name,
+        description,
+        market_product_table_json,
+        product_table_json,
+        mapping_table_json,
+        viability_notes,
+        predicted_roi_pct
+      )
+      VALUES (
+        @name,
+        @description,
+        @market_product_table_json,
+        @product_table_json,
+        @mapping_table_json,
+        @viability_notes,
+        @predicted_roi_pct
+      )
+    `).run({
+      name: data.name,
+      description: data.description ?? null,
+      market_product_table_json: JSON.stringify(normalizeMarketAnalysisTable(data.market_product_table ?? createEmptyMarketTable())),
+      product_table_json: JSON.stringify(normalizeMarketAnalysisTable(data.product_table ?? createEmptyMarketTable())),
+      mapping_table_json: JSON.stringify(normalizeMarketAnalysisMappings(data.mapping_table ?? [])),
+      viability_notes: data.viability_notes ?? null,
+      predicted_roi_pct: data.predicted_roi_pct ?? null,
+    });
+
+    return marketAnalysisDB.getCriteriaById(Number(result.lastInsertRowid))!;
+  },
+
+  updateCriteria(
+    id: number,
+    data: Partial<{
+      name: string;
+      description: string | null;
+      market_product_table: MarketAnalysisTable;
+      product_table: MarketAnalysisTable;
+      mapping_table: MarketAnalysisMapping[];
+      viability_notes: string | null;
+      predicted_roi_pct: number | null;
+    }>
+  ): MarketAnalysisCriteria | undefined {
+    const allowed = ['name', 'description', 'market_product_table', 'product_table', 'mapping_table', 'viability_notes', 'predicted_roi_pct'];
+    const entries = Object.entries(data).filter(([key]) => allowed.includes(key));
+    if (entries.length === 0) {
+      return marketAnalysisDB.getCriteriaById(id);
+    }
+
+    const sets = entries.map(([key]) => {
+      if (key === 'market_product_table') return 'market_product_table_json = @market_product_table_json';
+      if (key === 'product_table') return 'product_table_json = @product_table_json';
+      if (key === 'mapping_table') return 'mapping_table_json = @mapping_table_json';
+      return `${key} = @${key}`;
+    }).join(', ');
+
+    const params: Record<string, unknown> = { id };
+    for (const [key, value] of entries) {
+      if (key === 'market_product_table') {
+        params.market_product_table_json = JSON.stringify(normalizeMarketAnalysisTable(value as MarketAnalysisTable));
+      } else if (key === 'product_table') {
+        params.product_table_json = JSON.stringify(normalizeMarketAnalysisTable(value as MarketAnalysisTable));
+      } else if (key === 'mapping_table') {
+        params.mapping_table_json = JSON.stringify(normalizeMarketAnalysisMappings(value as MarketAnalysisMapping[]));
+      } else {
+        params[key] = value ?? null;
+      }
+    }
+
+    db.prepare(`UPDATE market_analysis_criteria SET ${sets}, updated_at = datetime('now') WHERE id = @id`).run(params);
+    return marketAnalysisDB.getCriteriaById(id);
+  },
+
+  deleteCriteria(id: number): void {
+    db.prepare('DELETE FROM market_analysis_criteria WHERE id = ?').run(id);
+  },
+
+  listAnalyses(): MarketAnalysisRecord[] {
+    const rows = db.prepare(`
+      SELECT ma.*, COALESCE(c.name, '') AS criteria_name
+      FROM market_analyses ma
+      LEFT JOIN market_analysis_criteria c ON c.id = ma.criteria_id
+      ORDER BY ma.updated_at DESC, ma.name ASC
+    `).all() as any[];
+
+    return rows.map(mapMarketAnalysisRow);
+  },
+
+  getAnalysisById(id: number): MarketAnalysisRecord | undefined {
+    const row = db.prepare(`
+      SELECT ma.*, COALESCE(c.name, '') AS criteria_name
+      FROM market_analyses ma
+      LEFT JOIN market_analysis_criteria c ON c.id = ma.criteria_id
+      WHERE ma.id = ?
+    `).get(id) as any;
+
+    return row ? mapMarketAnalysisRow(row) : undefined;
+  },
+
+  createAnalysis(data: {
+    name?: string | null;
+    criteria_id?: number | null;
+    description?: string | null;
+    viability_status?: MarketAnalysisDecision;
+    predicted_roi_pct?: number | null;
+    summary?: string | null;
+    combination_table?: Record<string, string>;
+  }): MarketAnalysisRecord {
+    const viability_status = MARKET_ANALYSIS_DECISIONS.includes((data.viability_status ?? 'review') as MarketAnalysisDecision)
+      ? data.viability_status ?? 'review'
+      : 'review';
+
+    const result = db.prepare(`
+      INSERT INTO market_analyses (
+        name,
+        criteria_id,
+        description,
+        viability_status,
+        predicted_roi_pct,
+        summary,
+        combination_table_json
+      )
+      VALUES (
+        @name,
+        @criteria_id,
+        @description,
+        @viability_status,
+        @predicted_roi_pct,
+        @summary,
+        @combination_table_json
+      )
+    `).run({
+      name: data.name ?? '',
+      criteria_id: data.criteria_id ?? 0,
+      description: data.description ?? null,
+      viability_status,
+      predicted_roi_pct: data.predicted_roi_pct ?? null,
+      summary: data.summary ?? null,
+      combination_table_json: JSON.stringify(data.combination_table ?? {}),
+    });
+
+    return marketAnalysisDB.getAnalysisById(Number(result.lastInsertRowid))!;
+  },
+
+  updateAnalysis(
+    id: number,
+    data: Partial<{
+      name: string;
+      criteria_id: number;
+      description: string | null;
+      viability_status: MarketAnalysisDecision;
+      predicted_roi_pct: number | null;
+      summary: string | null;
+      combination_table: Record<string, string>;
+    }>
+  ): MarketAnalysisRecord | undefined {
+    const allowed = ['name', 'criteria_id', 'description', 'viability_status', 'predicted_roi_pct', 'summary', 'combination_table'];
+    const entries = Object.entries(data).filter(([key]) => allowed.includes(key));
+    if (entries.length === 0) {
+      return marketAnalysisDB.getAnalysisById(id);
+    }
+
+    const sets = entries.map(([key]) => {
+      if (key === 'combination_table') return 'combination_table_json = @combination_table_json';
+      return `${key} = @${key}`;
+    }).join(', ');
+    const params: Record<string, unknown> = { id };
+    for (const [key, value] of entries) {
+      if (key === 'viability_status') {
+        params[key] = MARKET_ANALYSIS_DECISIONS.includes((value ?? 'review') as MarketAnalysisDecision)
+          ? value
+          : 'review';
+      } else if (key === 'combination_table') {
+        params.combination_table_json = JSON.stringify(value ?? {});
+      } else {
+        params[key] = value ?? null;
+      }
+    }
+
+    db.prepare(`UPDATE market_analyses SET ${sets}, updated_at = datetime('now') WHERE id = @id`).run(params);
+    return marketAnalysisDB.getAnalysisById(id);
+  },
+
+  deleteAnalysis(id: number): void {
+    db.prepare('DELETE FROM market_analyses WHERE id = ?').run(id);
   },
 };
 

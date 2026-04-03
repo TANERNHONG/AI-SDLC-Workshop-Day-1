@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import Link from 'next/link';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -345,11 +346,44 @@ export default function DataPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Data Management</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-          Export your data to Excel or JSON, or import records from a template file.
-        </p>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Data Management</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+            Export your data to Excel or JSON, import records from a template file, or evaluate new product lines in Market Analysis.
+          </p>
+        </div>
+
+        <Link
+          href="/stock/data/market-analysis"
+          className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700"
+        >
+          Open Market Analysis
+        </Link>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Link
+          href="/stock/data/market-analysis"
+          className="rounded-2xl border border-indigo-200 bg-indigo-50 p-5 transition-colors hover:bg-indigo-100 dark:border-indigo-900 dark:bg-indigo-950 dark:hover:bg-indigo-900"
+        >
+          <div className="flex items-start gap-3">
+            <span className="text-2xl">📈</span>
+            <div>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">Market Analysis</p>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                Create reusable criteria, compare market and product tables, map relationships, and assess predicted ROI before expanding a product line.
+              </p>
+            </div>
+          </div>
+        </Link>
+
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+          <p className="text-sm font-semibold text-gray-900 dark:text-white">Import & Export</p>
+          <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+            Use the tools below for operational data exchange, while Market Analysis is reserved for opportunity sizing and product-line evaluation.
+          </p>
+        </div>
       </div>
 
       <ExportSection />

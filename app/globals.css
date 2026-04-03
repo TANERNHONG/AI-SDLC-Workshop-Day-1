@@ -174,11 +174,192 @@
   --badge-active-text: #b45309;
 }
 
+/* ── Green with Dark Accents ── */
+:root[data-theme="green-dark"] {
+  --background: #f0fdf4;
+  --foreground: #14532d;
+  --page-bg: #ecfdf5;
+  --card-bg: #f0fdf4;
+  --text-primary: #14532d;
+  --text-secondary: #4d7c56;
+  --text-body: #1e3a2b;
+  --text-muted: #6b9e78;
+  --border-color: #bbf7d0;
+  --input-bg: #f0fdf4;
+  --input-border: #a7f3d0;
+  --accent-primary: #15803d;
+  --accent-primary-hover: #166534;
+  --accent-secondary: #0f766e;
+  --accent-green: #22c55e;
+  --accent-green-hover: #16a34a;
+  --accent-orange: #ea580c;
+  --accent-neutral: #4d7c56;
+  --filter-bg: #dcfce7;
+  --panel-bg: #f0fdf4;
+  --focus-ring: rgba(21, 128, 61, 0.2);
+  --success-bg: #bbf7d0;
+  --success-text: #14532d;
+  --error-bg: #fee2e2;
+  --error-text: #991b1b;
+  --dropdown-bg: #f0fdf4;
+  --hover-bg: #dcfce7;
+  --sidebar-bg: #14532d;
+  --sidebar-border: #1c6e3a;
+  --sidebar-hover: #166534;
+  --sidebar-active-bg: #15803d;
+  --sidebar-active-text: #bbf7d0;
+  --sidebar-text: #a7f3d0;
+  --sidebar-text-muted: #6ee7b7;
+  --header-bg: #f0fdf4;
+  --header-border: #bbf7d0;
+  --modal-bg: #f0fdf4;
+  --badge-active: #dcfce7;
+  --badge-active-text: #15803d;
+}
+
+/* ── Blue with Dark Accents ── */
+:root[data-theme="blue-dark"] {
+  --background: #eff6ff;
+  --foreground: #1e3a5f;
+  --page-bg: #eff6ff;
+  --card-bg: #f0f7ff;
+  --text-primary: #1e3a5f;
+  --text-secondary: #4b7399;
+  --text-body: #1e3a5f;
+  --text-muted: #7da3c7;
+  --border-color: #bfdbfe;
+  --input-bg: #f0f7ff;
+  --input-border: #93c5fd;
+  --accent-primary: #1d4ed8;
+  --accent-primary-hover: #1e40af;
+  --accent-secondary: #6366f1;
+  --accent-green: #10b981;
+  --accent-green-hover: #059669;
+  --accent-orange: #f97316;
+  --accent-neutral: #4b7399;
+  --filter-bg: #dbeafe;
+  --panel-bg: #eff6ff;
+  --focus-ring: rgba(29, 78, 216, 0.2);
+  --success-bg: #d1fae5;
+  --success-text: #065f46;
+  --error-bg: #fee2e2;
+  --error-text: #991b1b;
+  --dropdown-bg: #f0f7ff;
+  --hover-bg: #dbeafe;
+  --sidebar-bg: #1e3a5f;
+  --sidebar-border: #2a5078;
+  --sidebar-hover: #2a5078;
+  --sidebar-active-bg: #1d4ed8;
+  --sidebar-active-text: #bfdbfe;
+  --sidebar-text: #bfdbfe;
+  --sidebar-text-muted: #7da3c7;
+  --header-bg: #f0f7ff;
+  --header-border: #bfdbfe;
+  --modal-bg: #f0f7ff;
+  --badge-active: #dbeafe;
+  --badge-active-text: #1d4ed8;
+}
+
+/* ── Modern ── */
+:root[data-theme="modern"] {
+  --background: #fafafa;
+  --foreground: #18181b;
+  --page-bg: #f4f4f5;
+  --card-bg: #ffffff;
+  --text-primary: #18181b;
+  --text-secondary: #71717a;
+  --text-body: #3f3f46;
+  --text-muted: #a1a1aa;
+  --border-color: #e4e4e7;
+  --input-bg: #ffffff;
+  --input-border: #d4d4d8;
+  --accent-primary: #7c3aed;
+  --accent-primary-hover: #6d28d9;
+  --accent-secondary: #ec4899;
+  --accent-green: #10b981;
+  --accent-green-hover: #059669;
+  --accent-orange: #f97316;
+  --accent-neutral: #71717a;
+  --filter-bg: #f4f4f5;
+  --panel-bg: #fafafa;
+  --focus-ring: rgba(124, 58, 237, 0.15);
+  --success-bg: #d1fae5;
+  --success-text: #065f46;
+  --error-bg: #fee2e2;
+  --error-text: #991b1b;
+  --dropdown-bg: #ffffff;
+  --hover-bg: #f4f4f5;
+  --sidebar-bg: #18181b;
+  --sidebar-border: #27272a;
+  --sidebar-hover: #27272a;
+  --sidebar-active-bg: #7c3aed;
+  --sidebar-active-text: #f5f3ff;
+  --sidebar-text: #d4d4d8;
+  --sidebar-text-muted: #71717a;
+  --header-bg: #ffffff;
+  --header-border: #e4e4e7;
+  --modal-bg: #ffffff;
+  --badge-active: #f5f3ff;
+  --badge-active-text: #7c3aed;
+}
+
+/* ── Minimalistic ── */
+:root[data-theme="minimalistic"] {
+  --background: #ffffff;
+  --foreground: #262626;
+  --page-bg: #fafafa;
+  --card-bg: #ffffff;
+  --text-primary: #262626;
+  --text-secondary: #737373;
+  --text-body: #404040;
+  --text-muted: #a3a3a3;
+  --border-color: #e5e5e5;
+  --input-bg: #ffffff;
+  --input-border: #d4d4d4;
+  --accent-primary: #262626;
+  --accent-primary-hover: #171717;
+  --accent-secondary: #525252;
+  --accent-green: #16a34a;
+  --accent-green-hover: #15803d;
+  --accent-orange: #ea580c;
+  --accent-neutral: #737373;
+  --filter-bg: #f5f5f5;
+  --panel-bg: #fafafa;
+  --focus-ring: rgba(38, 38, 38, 0.1);
+  --success-bg: #f0fdf4;
+  --success-text: #14532d;
+  --error-bg: #fef2f2;
+  --error-text: #991b1b;
+  --dropdown-bg: #ffffff;
+  --hover-bg: #f5f5f5;
+  --sidebar-bg: #fafafa;
+  --sidebar-border: #e5e5e5;
+  --sidebar-hover: #f5f5f5;
+  --sidebar-active-bg: #262626;
+  --sidebar-active-text: #ffffff;
+  --sidebar-text: #404040;
+  --sidebar-text-muted: #a3a3a3;
+  --header-bg: #ffffff;
+  --header-border: #e5e5e5;
+  --modal-bg: #ffffff;
+  --badge-active: #f5f5f5;
+  --badge-active-text: #262626;
+}
+
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-family, 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
 }
+
+/* ── Font family custom property (overridden per font choice) ── */
+:root { --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+:root[data-font="system"] { --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+:root[data-font="inter"] { --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+:root[data-font="manrope"] { --font-family: 'Manrope', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+:root[data-font="dm-sans"] { --font-family: 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+:root[data-font="space-grotesk"] { --font-family: 'Space Grotesk', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+:root[data-font="serif"] { --font-family: 'Georgia', 'Cambria', 'Times New Roman', serif; }
 
 /* ── Theme-aware overrides for Tailwind utility classes ──
    These remap common hardcoded neutral colors in sub-pages
@@ -237,3 +418,23 @@ body {
 :root[data-theme="dark"] .text-gray-400 { color: var(--text-muted) !important; }
 :root[data-theme="dark"] .hover\:bg-gray-50:hover { background-color: var(--hover-bg) !important; }
 :root[data-theme="dark"] .hover\:bg-gray-100:hover { background-color: var(--hover-bg) !important; }
+
+/* Shared themed utility remaps so every non-default palette affects stock pages consistently. */
+:root[data-theme] .bg-white { background-color: var(--card-bg) !important; }
+:root[data-theme] .bg-gray-50 { background-color: var(--page-bg) !important; }
+:root[data-theme] .bg-gray-100 { background-color: var(--filter-bg) !important; }
+:root[data-theme] .border-gray-200 { border-color: var(--border-color) !important; }
+:root[data-theme] .border-gray-100 { border-color: var(--border-color) !important; }
+:root[data-theme] .divide-gray-50 > :not(:last-child) { border-color: var(--border-color) !important; }
+:root[data-theme] .text-gray-900 { color: var(--text-primary) !important; }
+:root[data-theme] .text-gray-700 { color: var(--text-body) !important; }
+:root[data-theme] .text-gray-600 { color: var(--text-body) !important; }
+:root[data-theme] .text-gray-500 { color: var(--text-secondary) !important; }
+:root[data-theme] .text-gray-400 { color: var(--text-muted) !important; }
+:root[data-theme] .hover\:bg-gray-50:hover { background-color: var(--hover-bg) !important; }
+:root[data-theme] .hover\:bg-gray-100:hover { background-color: var(--hover-bg) !important; }
+:root[data-theme] .bg-indigo-600 { background-color: var(--accent-primary) !important; }
+:root[data-theme] .hover\:bg-indigo-700:hover { background-color: var(--accent-primary-hover) !important; }
+:root[data-theme] .text-indigo-600 { color: var(--accent-primary) !important; }
+:root[data-theme] .bg-indigo-50 { background-color: var(--badge-active) !important; }
+:root[data-theme] .ring-indigo-500 { --tw-ring-color: var(--accent-primary) !important; }
