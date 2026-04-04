@@ -1099,60 +1099,15 @@ export default function MarketResearchPage() {
   // ── export helper (inside component to access setA/setB) ──
 
   function exportStockReport(matches: ClosestColorMatch[]) {
-    // Aggregate: for each Set B card, how many Set A cards need it
-    const demand = new Map<number, { name: string; url: string; demandCards: string[]; totalScore: number }>();
-    for (const m of matches) {
-      const b = setB[m.bIdx];
-      const a = setA[m.aIdx];
-      const existing = demand.get(m.bIdx);
-      if (existing) {
-        existing.demandCards.push(a.name);
-        existing.totalScore += m.overallScore;
-      } else {
-        demand.set(m.bIdx, {
-          name: b.name,
-          url: b.url,
-          demandCards: [a.name],
-          totalScore: m.overallScore,
-        });
-      }
-    }
+    const escaped = (s: string) => s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
 
-    // Build CSV
     const rows: string[] = [];
-    rows.push('Stock-Up Report — Market Research (Color Comparison)');
-    rows.push(`Generated: ${new Date().toLocaleString('en-SG', { timeZone: 'Asia/Singapore' })}`);
-    rows.push(`Total demand cards (Set A): ${setA.length}`);
-    rows.push(`Available supply cards (Set B): ${setB.length}`);
-    rows.push('');
-    rows.push('Purchase Recommendation');
-    rows.push('──────────────────────────────────────────');
-    rows.push('');
-    rows.push('Card (Set B),Quantity Needed,Avg Match %,Matched To (Set A)');
+    rows.push('Name of Card,Name of Product');
 
-    const sorted = [...demand.entries()].sort((a, b) => b[1].demandCards.length - a[1].demandCards.length);
-    for (const [, info] of sorted) {
-      const avgScore = ((info.totalScore / info.demandCards.length) * 100).toFixed(1);
-      const escaped = (s: string) => s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
-      rows.push(
-        `${escaped(info.name)},${info.demandCards.length},${avgScore}%,${escaped(info.demandCards.join('; '))}`
-      );
-    }
-
-    rows.push('');
-    rows.push('Summary');
-    rows.push('──────────────────────────────────────────');
-    rows.push(`Unique cards to purchase: ${demand.size}`);
-    rows.push(`Total units to purchase: ${matches.length}`);
-
-    // Unmatched Set A cards (if any)
-    const matchedAIndices = new Set(matches.map(m => m.aIdx));
-    const unmatched = setA.filter((_, i) => !matchedAIndices.has(i));
-    if (unmatched.length > 0) {
-      rows.push('');
-      rows.push('Unmatched Demand Cards (Set A) — no suitable match found');
-      rows.push('──────────────────────────────────────────');
-      for (const u of unmatched) rows.push(u.name);
+    for (const m of matches) {
+      const cardName = setA[m.aIdx].name;
+      const productName = setB[m.bIdx].name;
+      rows.push(`${escaped(cardName)},${escaped(productName)}`);
     }
 
     const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });
