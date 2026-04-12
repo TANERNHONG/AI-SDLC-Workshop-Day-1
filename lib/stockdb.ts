@@ -118,6 +118,46 @@ export interface Supplier {
   updated_at: string;
 }
 
+export interface Quotation {
+  id: number;
+  supplier_id: number;
+  supplier_name: string;
+  product_id: number;
+  product_name: string;
+  product_sku: string;
+  unit_price: number;
+  currency: string;
+  exchange_rate: number;       // unit_price × exchange_rate = SGD price
+  unit_price_sgd: number;      // computed: unit_price * exchange_rate
+  moq: number;                 // minimum order quantity
+  lead_time_days: number | null;
+  valid_from: string | null;   // ISO date
+  valid_until: string | null;  // ISO date
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuotationComparison {
+  product_id: number;
+  product_name: string;
+  product_sku: string;
+  quotations: Quotation[];
+  recommendation: {
+    best_price_id: number;
+    best_moq_value_id: number;  // best price÷MOQ balance
+    score_details: Array<{
+      quotation_id: number;
+      supplier_name: string;
+      unit_price_sgd: number;
+      moq: number;
+      moq_cost_sgd: number;       // unit_price_sgd × moq
+      value_score: number;         // composite score (lower = better)
+    }>;
+  } | null;
+}
+
 export interface PurchaseItem {
   id: number;
   purchase_id: number;
@@ -301,6 +341,30 @@ db.exec(`
     created_at      TEXT    DEFAULT (datetime('now')),
     updated_at      TEXT    DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS quotations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    supplier_id     INTEGER NOT NULL,
+    product_id      INTEGER NOT NULL,
+    unit_price      REAL    NOT NULL,
+    currency        TEXT    NOT NULL DEFAULT 'SGD',
+    exchange_rate   REAL    NOT NULL DEFAULT 1,
+    unit_price_sgd  REAL    NOT NULL,
+    moq             INTEGER NOT NULL DEFAULT 1,
+    lead_time_days  INTEGER,
+    valid_from      TEXT,
+    valid_until     TEXT,
+    notes           TEXT,
+    is_active       INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT    DEFAULT (datetime('now')),
+    updated_at      TEXT    DEFAULT (datetime('now')),
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+    FOREIGN KEY (product_id)  REFERENCES products(id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_quotations_supplier ON quotations(supplier_id);
+  CREATE INDEX IF NOT EXISTS idx_quotations_product  ON quotations(product_id);
+  CREATE INDEX IF NOT EXISTS idx_quotations_active   ON quotations(is_active);
 
   CREATE TABLE IF NOT EXISTS purchases (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1061,6 +1125,200 @@ export const supplierDB = {
 
   delete(id: number): void {
     db.prepare("UPDATE suppliers SET is_active = 0, updated_at = datetime('now') WHERE id = ?").run(id);
+  },
+};
+
+// ─── Quotation DB ────────────────────────────────────────────────────────────
+
+function mapQuotationRow(row: any): Quotation {
+  return {
+    ...row,
+    is_active: Boolean(row.is_active),
+    supplier_name: row.supplier_name ?? '',
+    product_name: row.product_name ?? '',
+    product_sku: row.product_sku ?? '',
+  };
+}
+
+const QUOTATION_SELECT = `
+  SELECT q.*, s.name AS supplier_name, p.name AS product_name, p.sku AS product_sku
+  FROM quotations q
+  JOIN suppliers s ON s.id = q.supplier_id
+  JOIN products  p ON p.id = q.product_id
+`;
+
+export const quotationDB = {
+  create(data: {
+    supplier_id: number; product_id: number; unit_price: number;
+    currency?: string; exchange_rate?: number; moq?: number;
+    lead_time_days?: number | null; valid_from?: string | null;
+    valid_until?: string | null; notes?: string | null;
+  }): Quotation {
+    const currency = data.currency ?? 'SGD';
+    const exchange_rate = data.exchange_rate ?? 1;
+    const unit_price_sgd = data.unit_price * exchange_rate;
+    const result = db.prepare(`
+      INSERT INTO quotations (supplier_id, product_id, unit_price, currency, exchange_rate, unit_price_sgd, moq, lead_time_days, valid_from, valid_until, notes)
+      VALUES (@supplier_id, @product_id, @unit_price, @currency, @exchange_rate, @unit_price_sgd, @moq, @lead_time_days, @valid_from, @valid_until, @notes)
+    `).run({
+      supplier_id: data.supplier_id,
+      product_id: data.product_id,
+      unit_price: data.unit_price,
+      currency,
+      exchange_rate,
+      unit_price_sgd,
+      moq: data.moq ?? 1,
+      lead_time_days: data.lead_time_days ?? null,
+      valid_from: data.valid_from ?? null,
+      valid_until: data.valid_until ?? null,
+      notes: data.notes ?? null,
+    });
+    return quotationDB.getById(Number(result.lastInsertRowid))!;
+  },
+
+  getById(id: number): Quotation | undefined {
+    const row = db.prepare(`${QUOTATION_SELECT} WHERE q.id = ?`).get(id) as any;
+    return row ? mapQuotationRow(row) : undefined;
+  },
+
+  list(opts: { supplier_id?: number; product_id?: number; activeOnly?: boolean } = {}): Quotation[] {
+    const clauses: string[] = [];
+    const params: any = {};
+    if (opts.activeOnly !== false) { clauses.push('q.is_active = 1'); }
+    if (opts.supplier_id) { clauses.push('q.supplier_id = @supplier_id'); params.supplier_id = opts.supplier_id; }
+    if (opts.product_id) { clauses.push('q.product_id = @product_id'); params.product_id = opts.product_id; }
+    const where = clauses.length ? ' WHERE ' + clauses.join(' AND ') : '';
+    const rows = db.prepare(`${QUOTATION_SELECT}${where} ORDER BY q.unit_price_sgd ASC`).all(params) as any[];
+    return rows.map(mapQuotationRow);
+  },
+
+  update(id: number, data: Partial<{
+    supplier_id: number; product_id: number; unit_price: number;
+    currency: string; exchange_rate: number; moq: number;
+    lead_time_days: number | null; valid_from: string | null;
+    valid_until: string | null; notes: string | null; is_active: boolean;
+  }>): Quotation | undefined {
+    const allowed = ['supplier_id', 'product_id', 'unit_price', 'currency', 'exchange_rate', 'moq', 'lead_time_days', 'valid_from', 'valid_until', 'notes', 'is_active'];
+    const entries = Object.entries(data).filter(([k]) => allowed.includes(k));
+    if (entries.length === 0) return quotationDB.getById(id);
+
+    // Recompute unit_price_sgd if price or rate changed
+    const needsRecompute = entries.some(([k]) => ['unit_price', 'exchange_rate'].includes(k));
+    if (needsRecompute) {
+      const existing = quotationDB.getById(id);
+      if (!existing) return undefined;
+      const price = (data.unit_price ?? existing.unit_price);
+      const rate = (data.exchange_rate ?? existing.exchange_rate);
+      entries.push(['unit_price_sgd', price * rate]);
+    }
+
+    const sets = entries.map(([k]) => `${k} = @${k}`).join(', ');
+    const params: any = Object.fromEntries(entries.map(([k, v]) => [k, typeof v === 'boolean' ? (v ? 1 : 0) : v]));
+    params.id = id;
+    db.prepare(`UPDATE quotations SET ${sets}, updated_at = datetime('now') WHERE id = @id`).run(params);
+    return quotationDB.getById(id);
+  },
+
+  delete(id: number): void {
+    db.prepare("UPDATE quotations SET is_active = 0, updated_at = datetime('now') WHERE id = ?").run(id);
+  },
+
+  /**
+   * Compare quotations across suppliers for a given product.
+   * 
+   * MOQ-Price Value Score formula:
+   *   score = (unit_price_sgd / baseline_price) × w_price
+   *         + (moq / baseline_moq)              × w_moq
+   *         + (moq × unit_price_sgd / budget)   × w_capital
+   * 
+   * Where:
+   *   - baseline_price = lowest unit_price_sgd among quotations
+   *   - baseline_moq   = lowest moq among quotations
+   *   - budget          = median(moq × unit_price_sgd) across quotations (capital outlay baseline)
+   *   - w_price=0.45, w_moq=0.25, w_capital=0.30
+   * 
+   * Lower score = better balance of price, MOQ, and capital requirement.
+   * The formula penalises high MOQ through two channels:
+   *   1. Direct MOQ ratio — prefer smaller batches
+   *   2. Capital outlay — a cheap unit price with huge MOQ still costs a lot of cash
+   */
+  compareByProduct(product_id: number): QuotationComparison | null {
+    const quotations = quotationDB.list({ product_id, activeOnly: true });
+    if (quotations.length === 0) return null;
+
+    const product = quotations[0];
+    const comparison: QuotationComparison = {
+      product_id,
+      product_name: product.product_name,
+      product_sku: product.product_sku,
+      quotations,
+      recommendation: null,
+    };
+
+    if (quotations.length < 2) {
+      const q = quotations[0];
+      comparison.recommendation = {
+        best_price_id: q.id,
+        best_moq_value_id: q.id,
+        score_details: [{
+          quotation_id: q.id,
+          supplier_name: q.supplier_name,
+          unit_price_sgd: q.unit_price_sgd,
+          moq: q.moq,
+          moq_cost_sgd: q.unit_price_sgd * q.moq,
+          value_score: 1,
+        }],
+      };
+      return comparison;
+    }
+
+    // Baselines
+    const baselinePrice = Math.min(...quotations.map(q => q.unit_price_sgd));
+    const baselineMoq = Math.min(...quotations.map(q => q.moq));
+    const outlays = quotations.map(q => q.unit_price_sgd * q.moq).sort((a, b) => a - b);
+    const budget = outlays.length % 2 === 0
+      ? (outlays[outlays.length / 2 - 1] + outlays[outlays.length / 2]) / 2
+      : outlays[Math.floor(outlays.length / 2)];
+
+    const W_PRICE = 0.45;
+    const W_MOQ = 0.25;
+    const W_CAPITAL = 0.30;
+
+    const scored = quotations.map(q => {
+      const moqCost = q.unit_price_sgd * q.moq;
+      const score = (q.unit_price_sgd / baselinePrice) * W_PRICE
+                  + (q.moq / baselineMoq) * W_MOQ
+                  + (budget > 0 ? (moqCost / budget) * W_CAPITAL : 0);
+      return {
+        quotation_id: q.id,
+        supplier_name: q.supplier_name,
+        unit_price_sgd: q.unit_price_sgd,
+        moq: q.moq,
+        moq_cost_sgd: moqCost,
+        value_score: Math.round(score * 1000) / 1000,
+      };
+    }).sort((a, b) => a.value_score - b.value_score);
+
+    const bestPrice = [...scored].sort((a, b) => a.unit_price_sgd - b.unit_price_sgd)[0];
+
+    comparison.recommendation = {
+      best_price_id: bestPrice.quotation_id,
+      best_moq_value_id: scored[0].quotation_id,
+      score_details: scored,
+    };
+
+    return comparison;
+  },
+
+  /** Compare all products that have multiple supplier quotations */
+  compareAll(): QuotationComparison[] {
+    const productIds = db.prepare(
+      'SELECT DISTINCT product_id FROM quotations WHERE is_active = 1'
+    ).all() as { product_id: number }[];
+
+    return productIds
+      .map(({ product_id }) => quotationDB.compareByProduct(product_id))
+      .filter((c): c is QuotationComparison => c !== null && c.quotations.length >= 1);
   },
 };
 
