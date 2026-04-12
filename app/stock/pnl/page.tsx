@@ -11,11 +11,12 @@ type PnLSummary = {
   revenue: number; cogs: number; gross_profit: number;
   gross_margin_pct: number; purchase_spend: number;
   order_count: number; purchase_count: number;
-  shipping_profit: number;
+  shipping_profit: number; total_shipping_cost: number;
 };
 type DailyPnL  = { date: string; revenue: number; cogs: number; gross_profit: number; };
 type ProductPnL = {
   product_id: number; product_name: string; total_quantity: number;
+  historical_units_ordered: number;
   revenue: number; cogs: number; gross_profit: number; gross_margin_pct: number;
 };
 
@@ -66,9 +67,9 @@ function StatCard({ label, value, sub, colorClass, icon }: {
         {icon}
       </div>
       <div className="min-w-0">
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide truncate">{label}</p>
-        <p className="text-xl font-bold text-gray-900 dark:text-white mt-0.5">{value}</p>
-        {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide break-words">{label}</p>
+        <p className="text-base sm:text-lg lg:text-xl font-bold text-gray-900 dark:text-white mt-0.5 break-all">{value}</p>
+        {sub && <p className="text-xs text-gray-400 mt-0.5 break-words">{sub}</p>}
       </div>
     </div>
   );
@@ -127,6 +128,7 @@ export default function PnLPage() {
     switch (sortBy) {
       case 'product_name': cmp = a.product_name.localeCompare(b.product_name); break;
       case 'total_quantity': cmp = a.total_quantity - b.total_quantity; break;
+      case 'historical_units_ordered': cmp = a.historical_units_ordered - b.historical_units_ordered; break;
       case 'revenue': cmp = a.revenue - b.revenue; break;
       case 'cogs': cmp = a.cogs - b.cogs; break;
       case 'gross_profit': cmp = a.gross_profit - b.gross_profit; break;
@@ -198,23 +200,35 @@ export default function PnLPage() {
         <>
           {/* Summary cards */}
           {summary && (
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+            <>
+            <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              All monetary values are displayed in SGD (Singapore Dollars)
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
               <StatCard
-                label="Revenue"
+                label="Revenue (SGD)"
                 value={fmt$(summary.revenue)}
                 sub={`${summary.order_count} completed orders`}
                 colorClass="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400"
                 icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>}
               />
               <StatCard
-                label="COGS"
+                label="COGS (SGD)"
                 value={fmt$(summary.cogs)}
                 sub={hasCogsData ? 'Cost of goods sold' : 'No cost data yet — add purchases'}
                 colorClass="bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400"
                 icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>}
               />
               <StatCard
-                label="Shipping P/L"
+                label="Total Shipping Cost (SGD)"
+                value={fmt$(summary.total_shipping_cost ?? 0)}
+                sub="Purchase shipping costs"
+                colorClass="bg-cyan-100 dark:bg-cyan-900/40 text-cyan-600 dark:text-cyan-400"
+                icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a2 2 0 104 0m-4 0a2 2 0 11-4 0"/></svg>}
+              />
+              <StatCard
+                label="Shipping P/L (SGD)"
                 value={fmt$(summary.shipping_profit ?? 0)}
                 sub={summary.shipping_profit >= 0 ? 'Shipping profit' : 'Shipping loss'}
                 colorClass={summary.shipping_profit >= 0
@@ -223,7 +237,7 @@ export default function PnLPage() {
                 icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>}
               />
               <StatCard
-                label="Gross Profit"
+                label="Gross Profit (SGD)"
                 value={fmt$(summary.gross_profit)}
                 sub={`${fmtPct(summary.gross_margin_pct)} gross margin`}
                 colorClass={summary.gross_profit >= 0
@@ -232,13 +246,14 @@ export default function PnLPage() {
                 icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>}
               />
               <StatCard
-                label="Purchase Spend"
+                label="Purchase Spend (SGD)"
                 value={fmt$(summary.purchase_spend)}
                 sub={`${summary.purchase_count} received POs`}
                 colorClass="bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400"
                 icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>}
               />
             </div>
+            </>
           )}
 
           {/* Peak day banner */}
@@ -263,7 +278,7 @@ export default function PnLPage() {
 
           {/* Line chart */}
           <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 p-6">
-            <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-5">Revenue vs COGS vs Gross Profit</h2>
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-5">Revenue vs COGS vs Gross Profit <span className="text-xs font-normal text-gray-400">(SGD)</span></h2>
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(156,163,175,0.2)" />
@@ -282,7 +297,7 @@ export default function PnLPage() {
           <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
             <div className="px-6 py-4 border-b border-gray-100 dark:border-gray-800">
               <h2 className="text-base font-semibold text-gray-900 dark:text-white">Product Profitability</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Sorted by gross profit — highest first</p>
+              <p className="text-xs text-gray-400 mt-0.5">Sorted by gross profit — highest first · All amounts in SGD</p>
             </div>
             {products.length === 0 ? (
               <div className="text-center py-12 text-gray-400 text-sm">No sales in this period.</div>
@@ -293,9 +308,10 @@ export default function PnLPage() {
                     <tr>
                       <th className="px-5 py-3 text-left cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('product_name')}>Product<SortArrow col="product_name" sortBy={sortBy} sortDir={sortDir} /></th>
                       <th className="px-5 py-3 text-right cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('total_quantity')}>Units Sold<SortArrow col="total_quantity" sortBy={sortBy} sortDir={sortDir} /></th>
-                      <th className="px-5 py-3 text-right cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('revenue')}>Revenue<SortArrow col="revenue" sortBy={sortBy} sortDir={sortDir} /></th>
-                      <th className="px-5 py-3 text-right cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('cogs')}>COGS<SortArrow col="cogs" sortBy={sortBy} sortDir={sortDir} /></th>
-                      <th className="px-5 py-3 text-right cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('gross_profit')}>Gross Profit<SortArrow col="gross_profit" sortBy={sortBy} sortDir={sortDir} /></th>
+                      <th className="px-5 py-3 text-right cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('historical_units_ordered')}>Units Ordered<SortArrow col="historical_units_ordered" sortBy={sortBy} sortDir={sortDir} /></th>
+                      <th className="px-5 py-3 text-right cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('revenue')}>Revenue (SGD)<SortArrow col="revenue" sortBy={sortBy} sortDir={sortDir} /></th>
+                      <th className="px-5 py-3 text-right cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('cogs')}>COGS (SGD)<SortArrow col="cogs" sortBy={sortBy} sortDir={sortDir} /></th>
+                      <th className="px-5 py-3 text-right cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('gross_profit')}>Gross Profit (SGD)<SortArrow col="gross_profit" sortBy={sortBy} sortDir={sortDir} /></th>
                       <th className="px-5 py-3 text-right cursor-pointer select-none hover:text-gray-600 dark:hover:text-gray-200 transition-colors" onClick={() => toggleSort('gross_margin_pct')}>Margin<SortArrow col="gross_margin_pct" sortBy={sortBy} sortDir={sortDir} /></th>
                     </tr>
                   </thead>
@@ -304,6 +320,12 @@ export default function PnLPage() {
                       <tr key={p.product_id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                         <td className="px-5 py-3 font-medium text-gray-900 dark:text-white">{p.product_name}</td>
                         <td className="px-5 py-3 text-right text-gray-600 dark:text-gray-400">{p.total_quantity.toLocaleString()}</td>
+                        <td className="px-5 py-3 text-right text-gray-600 dark:text-gray-400">
+                          {p.historical_units_ordered.toLocaleString()}
+                          {p.historical_units_ordered > 0 && p.total_quantity > p.historical_units_ordered && (
+                            <span className="ml-1 text-xs text-amber-500" title="Units sold exceeds units ordered in this period">⚠</span>
+                          )}
+                        </td>
                         <td className="px-5 py-3 text-right font-medium text-gray-900 dark:text-white">{fmt$(p.revenue)}</td>
                         <td className="px-5 py-3 text-right text-orange-600 dark:text-orange-400">{fmt$(p.cogs)}</td>
                         <td className={`px-5 py-3 text-right font-semibold ${p.gross_profit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
@@ -329,6 +351,9 @@ export default function PnLPage() {
                           <td className="px-5 py-3 text-gray-700 dark:text-gray-300">Total</td>
                           <td className="px-5 py-3 text-right text-gray-700 dark:text-gray-300">
                             {products.reduce((s, p) => s + p.total_quantity, 0).toLocaleString()}
+                          </td>
+                          <td className="px-5 py-3 text-right text-gray-700 dark:text-gray-300">
+                            {products.reduce((s, p) => s + p.historical_units_ordered, 0).toLocaleString()}
                           </td>
                           <td className="px-5 py-3 text-right text-gray-900 dark:text-white">{fmt$(tot.revenue)}</td>
                           <td className="px-5 py-3 text-right text-orange-600 dark:text-orange-400">{fmt$(tot.cogs)}</td>

@@ -360,7 +360,10 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
           </div>
 
           {/* Cart */}
-          {cart.length > 0 && (
+          {cart.length > 0 && (() => {
+            const totalQty = cart.reduce((s, i) => s + i.quantity, 0);
+            const shippingPerUnit = totalQty > 0 ? shippingAmt / totalQty : 0;
+            return (
             <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 dark:bg-gray-800 text-xs text-gray-500">
@@ -368,12 +371,15 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
                     <th className="px-4 py-2 text-left">Product</th>
                     <th className="px-4 py-2 text-right">Qty</th>
                     <th className="px-4 py-2 text-right">Unit Cost ({sym})</th>
+                    <th className="px-4 py-2 text-right">Landed Cost ({sym})</th>
                     <th className="px-4 py-2 text-right">Total ({sym})</th>
                     <th className="px-2 py-2"></th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                  {cart.map((item, idx) => (
+                  {cart.map((item, idx) => {
+                    const landedCost = item.unit_cost + shippingPerUnit;
+                    return (
                     <tr key={idx}>
                       <td className="px-4 py-2">
                         <p className="font-medium text-gray-900 dark:text-white">{item.product_name}</p>
@@ -389,6 +395,9 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
                           onChange={e => setCart(c => c.map((ci, i) => i === idx ? { ...ci, unit_cost: Number(e.target.value) || 0 } : ci))}
                           className="w-24 px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-right text-sm" />
                       </td>
+                      <td className="px-4 py-2 text-right tabular-nums text-indigo-600 dark:text-indigo-400 font-medium" title={`Unit cost ${sym}${item.unit_cost.toFixed(2)} + shipping ${sym}${shippingPerUnit.toFixed(2)}/unit`}>
+                        {sym}{landedCost.toFixed(2)}
+                      </td>
                       <td className="px-4 py-2 text-right font-medium tabular-nums">{sym}{(item.unit_cost * item.quantity).toFixed(2)}</td>
                       <td className="px-2 py-2">
                         <button onClick={() => setCart(c => c.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 p-1">
@@ -396,11 +405,18 @@ function NewPurchaseModal({ suppliers, products, onClose, onSave }: {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
+              {shippingAmt > 0 && (
+                <div className="px-4 py-2 bg-indigo-50 dark:bg-indigo-950/30 border-t border-indigo-100 dark:border-indigo-900 text-xs text-indigo-600 dark:text-indigo-400">
+                  Shipping {sym}{shippingAmt.toFixed(2)} ÷ {totalQty} units = <strong>{sym}{shippingPerUnit.toFixed(4)}</strong>/unit added to landed cost
+                </div>
+              )}
             </div>
-          )}
+            );
+          })()}
 
           {/* Totals */}
           <div className="flex flex-col items-end gap-1.5 text-sm">
@@ -578,7 +594,10 @@ function EditPurchaseModal({ purchase, products, onClose, onSave }: {
           {/* Line Items — editable */}
           <div className="space-y-3">
             <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Line Items</p>
-            {cart.length > 0 && (
+            {cart.length > 0 && (() => {
+              const totalQty = cart.reduce((s, i) => s + i.quantity, 0);
+              const shippingPerUnit = totalQty > 0 ? shippingAmt / totalQty : 0;
+              return (
               <div className="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 dark:bg-gray-800 text-xs text-gray-500">
@@ -586,12 +605,15 @@ function EditPurchaseModal({ purchase, products, onClose, onSave }: {
                       <th className="px-3 py-2 text-left">Product</th>
                       <th className="px-3 py-2 text-right w-20">Qty</th>
                       <th className="px-3 py-2 text-right w-28">Unit Cost</th>
+                      <th className="px-3 py-2 text-right w-28">Landed Cost</th>
                       <th className="px-3 py-2 text-right w-24">Total</th>
                       <th className="px-1 py-2 w-8"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                    {cart.map((item, idx) => (
+                    {cart.map((item, idx) => {
+                      const landedCost = item.unit_cost + shippingPerUnit;
+                      return (
                       <tr key={idx}>
                         <td className="px-3 py-2">
                           <select value={item.product_id}
@@ -613,6 +635,9 @@ function EditPurchaseModal({ purchase, products, onClose, onSave }: {
                             onChange={e => setCart(c => c.map((ci, i) => i === idx ? { ...ci, unit_cost: Number(e.target.value) || 0 } : ci))}
                             className="w-full px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-right text-sm" />
                         </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-indigo-600 dark:text-indigo-400 font-medium" title={`Unit cost ${sym}${item.unit_cost.toFixed(2)} + shipping ${sym}${shippingPerUnit.toFixed(2)}/unit`}>
+                          {sym}{landedCost.toFixed(2)}
+                        </td>
                         <td className="px-3 py-2 text-right font-medium tabular-nums text-gray-700 dark:text-gray-300">{sym}{(item.unit_cost * item.quantity).toFixed(2)}</td>
                         <td className="px-1 py-2">
                           <button onClick={() => setCart(c => c.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 p-1">
@@ -620,11 +645,18 @@ function EditPurchaseModal({ purchase, products, onClose, onSave }: {
                           </button>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
+                {shippingAmt > 0 && (
+                  <div className="px-3 py-2 bg-indigo-50 dark:bg-indigo-950/30 border-t border-indigo-100 dark:border-indigo-900 text-xs text-indigo-600 dark:text-indigo-400">
+                    Shipping {sym}{shippingAmt.toFixed(2)} ÷ {totalQty} units = <strong>{sym}{shippingPerUnit.toFixed(4)}</strong>/unit added to landed cost
+                  </div>
+                )}
               </div>
-            )}
+              );
+            })()}
             {/* Inline add row */}
             <div className="grid grid-cols-12 gap-2 items-end bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3">
               <div className="col-span-4">

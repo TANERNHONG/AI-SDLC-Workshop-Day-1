@@ -182,6 +182,7 @@ export interface PnLSummary {
   purchase_spend: number;
   order_count: number;
   purchase_count: number;
+  total_shipping_cost: number;
 }
 
 export interface DailyPnL {
@@ -195,6 +196,7 @@ export interface ProductPnL {
   product_id: number;
   product_name: string;
   total_quantity: number;
+  historical_units_ordered: number;
   revenue: number;
   cogs: number;
   gross_profit: number;
@@ -1310,10 +1312,15 @@ export const pnlDB = {
       FROM sales WHERE status = 'completed' AND sale_date >= ? AND sale_date <= ?
     `).get(startDate, end) as any;
 
+    const totalShippingRow = db.prepare(`
+      SELECT COALESCE(SUM(shipping_cost * exchange_rate), 0) AS total_shipping_cost
+      FROM purchases WHERE status = 'received' AND purchase_date >= ? AND purchase_date <= ?
+    `).get(startDate, end) as any;
+
     const revenue = revenueRow.revenue;
     const cogs = cogsRow.cogs;
     const shipping_profit = shippingRow.shipping_profit;
-    const gross_profit = revenue - cogs + shipping_profit;
+    const gross_profit = revenue - cogs;
     return {
       revenue, cogs, gross_profit,
       gross_margin_pct: revenue > 0 ? (gross_profit / revenue) * 100 : 0,
@@ -1321,6 +1328,7 @@ export const pnlDB = {
       purchase_spend: purchaseRow.purchase_spend,
       order_count: revenueRow.order_count,
       purchase_count: purchaseRow.purchase_count,
+      total_shipping_cost: totalShippingRow.total_shipping_cost,
     };
   },
 
@@ -1347,21 +1355,55 @@ export const pnlDB = {
   },
 
   getProductPnL(startDate: string, endDate: string): ProductPnL[] {
+    const endTs = endDate + ' 23:59:59';
     const rows = db.prepare(`
+      WITH relevant_products AS (
+        -- Products with sales in period
+        SELECT DISTINCT si.product_id
+        FROM sale_items si
+        INNER JOIN sales s ON s.id = si.sale_id
+        WHERE s.status = 'completed' AND s.sale_date >= ? AND s.sale_date <= ?
+        UNION
+        -- Products with received purchases in period
+        SELECT DISTINCT pi.product_id
+        FROM purchase_items pi
+        INNER JOIN purchases pu ON pu.id = pi.purchase_id
+        WHERE pu.status = 'received' AND pu.purchase_date >= ? AND pu.purchase_date <= ?
+      )
       SELECT
-        si.product_id,
-        si.product_name,
-        SUM(si.quantity)                              AS total_quantity,
-        SUM(si.line_total)                            AS revenue,
-        SUM(COALESCE(p.cost * p.cost_exchange_rate, 0) * si.quantity) AS cogs,
-        SUM(si.line_total) - SUM(COALESCE(p.cost * p.cost_exchange_rate, 0) * si.quantity) AS gross_profit
-      FROM sale_items si
-      INNER JOIN sales s ON s.id = si.sale_id
-      LEFT JOIN products p ON p.id = si.product_id
-      WHERE s.status = 'completed' AND s.sale_date >= ? AND s.sale_date <= ?
-      GROUP BY si.product_id, si.product_name
+        p.id AS product_id,
+        p.name AS product_name,
+        COALESCE(sold.total_quantity, 0) AS total_quantity,
+        COALESCE(ordered.units_ordered, 0) AS historical_units_ordered,
+        COALESCE(sold.revenue, 0) AS revenue,
+        COALESCE(sold.total_quantity, 0) * COALESCE(p.cost * p.cost_exchange_rate, 0) AS cogs,
+        COALESCE(sold.revenue, 0) - COALESCE(sold.total_quantity, 0) * COALESCE(p.cost * p.cost_exchange_rate, 0) AS gross_profit
+      FROM relevant_products rp
+      INNER JOIN products p ON p.id = rp.product_id
+      LEFT JOIN (
+        SELECT si.product_id,
+               SUM(si.quantity) AS total_quantity,
+               SUM(si.line_total) AS revenue
+        FROM sale_items si
+        INNER JOIN sales s ON s.id = si.sale_id
+        WHERE s.status = 'completed' AND s.sale_date >= ? AND s.sale_date <= ?
+        GROUP BY si.product_id
+      ) sold ON sold.product_id = p.id
+      LEFT JOIN (
+        SELECT pi.product_id,
+               SUM(pi.quantity) AS units_ordered
+        FROM purchase_items pi
+        INNER JOIN purchases pu ON pu.id = pi.purchase_id
+        WHERE pu.status = 'received' AND pu.purchase_date >= ? AND pu.purchase_date <= ?
+        GROUP BY pi.product_id
+      ) ordered ON ordered.product_id = p.id
       ORDER BY gross_profit DESC
-    `).all(startDate, endDate + ' 23:59:59') as any[];
+    `).all(
+      startDate, endTs,   // relevant_products: sales
+      startDate, endTs,   // relevant_products: purchases
+      startDate, endTs,   // sold subquery
+      startDate, endTs    // ordered subquery
+    ) as any[];
     return rows.map(r => ({
       ...r,
       gross_margin_pct: r.revenue > 0 ? (r.gross_profit / r.revenue) * 100 : 0,
