@@ -531,7 +531,7 @@ function ProductsContent() {
       case 'sku': va = a.sku.toLowerCase(); vb = b.sku.toLowerCase(); break;
       case 'category': va = (a.category ?? '').toLowerCase(); vb = (b.category ?? '').toLowerCase(); break;
       case 'price': va = a.price; vb = b.price; break;
-      case 'margin': va = a.price > 0 ? (a.price - a.cost) / a.price : 0; vb = b.price > 0 ? (b.price - b.cost) / b.price : 0; break;
+      case 'margin': va = a.price > 0 ? (a.price - a.cost * (a.cost_exchange_rate ?? 1)) / a.price : 0; vb = b.price > 0 ? (b.price - b.cost * (b.cost_exchange_rate ?? 1)) / b.price : 0; break;
       case 'stock': va = a.stock_quantity; vb = b.stock_quantity; break;
       case 'incoming': va = (a as any).pending_stock ?? 0; vb = (b as any).pending_stock ?? 0; break;
       default: va = a.name.toLowerCase(); vb = b.name.toLowerCase();
@@ -646,7 +646,8 @@ function ProductsContent() {
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
               {sortedDisplay.map((product, idx) => {
-                const margin = product.price > 0 ? ((product.price - product.cost) / product.price * 100) : 0;
+                const costSGD = product.cost * (product.cost_exchange_rate ?? 1);
+                const margin = product.price > 0 ? ((product.price - costSGD) / product.price * 100) : 0;
                 // Show section headers between groups
                 const prevProduct = idx > 0 ? sortedDisplay[idx - 1] : null;
                 const showHypotheticalHeader = product.is_hypothetical && product.is_active && (!prevProduct || !prevProduct.is_hypothetical || !prevProduct.is_active);

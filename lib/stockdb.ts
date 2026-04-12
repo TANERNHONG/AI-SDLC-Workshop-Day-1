@@ -1106,6 +1106,10 @@ export const purchaseDB = {
         VALUES (@purchase_id, @product_id, @product_name, @product_sku, @quantity, @unit_cost, @line_total)
       `);
 
+      // Spread shipping cost evenly across all items
+      const totalQuantity = items.reduce((s, i) => s + i.quantity, 0);
+      const shippingPerUnit = totalQuantity > 0 ? shipping_cost / totalQuantity : 0;
+
       for (const item of items) {
         const product = productDB.getById(item.product_id);
         if (!product) throw new Error(`Product ${item.product_id} not found`);
@@ -1118,9 +1122,9 @@ export const purchaseDB = {
           unit_cost: item.unit_cost,
           line_total: item.unit_cost * item.quantity,
         });
-        // Update product cost to latest purchase cost on receive
+        // Update product cost to latest purchase cost on receive (including shipping allocation)
         if (status === 'received') {
-          productDB.update(item.product_id, { cost: item.unit_cost, cost_currency: currency, cost_exchange_rate: exchange_rate });
+          productDB.update(item.product_id, { cost: item.unit_cost + shippingPerUnit, cost_currency: currency, cost_exchange_rate: exchange_rate });
         }
       }
       return purchaseDB.getById(purchaseId)!;
@@ -1163,13 +1167,16 @@ export const purchaseDB = {
             line_total: item.unit_cost * item.quantity,
           });
         }
-        // Update product cost if status is (or will be) received
+        // Update product cost if status is (or will be) received (including shipping allocation)
         const newStatus = (data.status ?? purchase.status) as string;
         const updCurrency = data.currency ?? purchase.currency;
         const updRate = data.exchange_rate ?? purchase.exchange_rate;
         if (newStatus === 'received') {
+          const updShipping = data.shipping_cost ?? purchase.shipping_cost;
+          const updTotalQty = data.items.reduce((s, i) => s + i.quantity, 0);
+          const updShippingPerUnit = updTotalQty > 0 ? updShipping / updTotalQty : 0;
           for (const item of data.items) {
-            productDB.update(item.product_id, { cost: item.unit_cost, cost_currency: updCurrency, cost_exchange_rate: updRate });
+            productDB.update(item.product_id, { cost: item.unit_cost + updShippingPerUnit, cost_currency: updCurrency, cost_exchange_rate: updRate });
           }
         }
       }
@@ -1185,10 +1192,12 @@ export const purchaseDB = {
       const total_cost = (subtotal - discount + tax + shipping_cost) * exchange_rate;
       const newStatus = data.status ?? purchase.status;
 
-      // Update product cost when status changes to received
+      // Update product cost when status changes to received (including shipping allocation)
       if (!data.items && newStatus === 'received' && purchase.status === 'pending') {
+        const statusTotalQty = purchase.items.reduce((s, i) => s + i.quantity, 0);
+        const statusShippingPerUnit = statusTotalQty > 0 ? shipping_cost / statusTotalQty : 0;
         for (const item of purchase.items) {
-          productDB.update(item.product_id, { cost: item.unit_cost, cost_currency: currency, cost_exchange_rate: exchange_rate });
+          productDB.update(item.product_id, { cost: item.unit_cost + statusShippingPerUnit, cost_currency: currency, cost_exchange_rate: exchange_rate });
         }
       }
 
@@ -1242,10 +1251,12 @@ export const purchaseDB = {
   updateStatus(id: number, status: 'received' | 'pending' | 'cancelled'): void {
     const purchase = purchaseDB.getById(id);
     if (!purchase) return;
-    // Update product cost when marking as received
+    // Update product cost when marking as received (including shipping allocation)
     if (status === 'received' && purchase.status === 'pending') {
+      const totalQty = purchase.items.reduce((s, i) => s + i.quantity, 0);
+      const shippingPerUnit = totalQty > 0 ? purchase.shipping_cost / totalQty : 0;
       for (const item of purchase.items) {
-        productDB.update(item.product_id, { cost: item.unit_cost, cost_currency: purchase.currency, cost_exchange_rate: purchase.exchange_rate });
+        productDB.update(item.product_id, { cost: item.unit_cost + shippingPerUnit, cost_currency: purchase.currency, cost_exchange_rate: purchase.exchange_rate });
       }
     }
     db.prepare("UPDATE purchases SET status = ?, updated_at = datetime('now') WHERE id = ?").run(status, id);
@@ -2815,5 +2826,231 @@ function _getSizeGroup(product: Product): string {
   }
   return `${rl}×${rw}cm`;
 }
+
+// ─── Budget Types ────────────────────────────────────────────────────────────
+
+export interface Budget {
+  id: number;
+  name: string;
+  total_budget: number;         // allocated budget amount (SGD)
+  start_date: string;           // cycle start (YYYY-MM-DD)
+  end_date: string;             // cycle end (YYYY-MM-DD)
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BudgetItem {
+  id: number;
+  budget_id: number;
+  product_id: number;
+  product_name: string;
+  product_sku: string;
+  supplier_id: number | null;
+  supplier_name: string | null;
+  quantity: number;
+  unit_cost: number;            // purchase price per unit (SGD)
+  predicted_sell_price: number; // expected selling price
+  line_total: number;           // quantity × unit_cost
+  predicted_revenue: number;    // quantity × predicted_sell_price
+  predicted_roi_pct: number;    // ((revenue - cost) / cost) × 100
+  position: number;             // for ordering
+}
+
+export interface BudgetWithItems extends Budget {
+  items: BudgetItem[];
+  total_spent: number;          // sum of line_totals
+  remaining: number;            // total_budget - total_spent
+  total_predicted_revenue: number;
+  overall_roi_pct: number;
+}
+
+// ─── Budget Schema ───────────────────────────────────────────────────────────
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS budgets (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT    NOT NULL,
+    total_budget    REAL    NOT NULL DEFAULT 0,
+    start_date      TEXT    NOT NULL,
+    end_date        TEXT    NOT NULL,
+    notes           TEXT,
+    is_active       INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT    DEFAULT (datetime('now')),
+    updated_at      TEXT    DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS budget_items (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    budget_id           INTEGER NOT NULL,
+    product_id          INTEGER NOT NULL,
+    product_name        TEXT    NOT NULL,
+    product_sku         TEXT    NOT NULL,
+    supplier_id         INTEGER,
+    supplier_name       TEXT,
+    quantity            INTEGER NOT NULL DEFAULT 1,
+    unit_cost           REAL    NOT NULL DEFAULT 0,
+    predicted_sell_price REAL   NOT NULL DEFAULT 0,
+    line_total          REAL    NOT NULL DEFAULT 0,
+    predicted_revenue   REAL    NOT NULL DEFAULT 0,
+    predicted_roi_pct   REAL    NOT NULL DEFAULT 0,
+    position            INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (budget_id)  REFERENCES budgets(id)   ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id)  ON DELETE RESTRICT,
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE SET NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_budget_items_budget ON budget_items(budget_id);
+  CREATE INDEX IF NOT EXISTS idx_budget_items_product ON budget_items(product_id);
+  CREATE INDEX IF NOT EXISTS idx_budgets_dates ON budgets(start_date, end_date);
+`);
+
+// ─── Budget DB ───────────────────────────────────────────────────────────────
+
+export const budgetDB = {
+  create(data: { name: string; total_budget: number; start_date: string; end_date: string; notes?: string | null }): Budget {
+    const stmt = db.prepare(`
+      INSERT INTO budgets (name, total_budget, start_date, end_date, notes, is_active)
+      VALUES (@name, @total_budget, @start_date, @end_date, @notes, 1)
+    `);
+    const result = stmt.run({
+      name: data.name,
+      total_budget: data.total_budget,
+      start_date: data.start_date,
+      end_date: data.end_date,
+      notes: data.notes ?? null,
+    });
+    return budgetDB.getById(Number(result.lastInsertRowid))!;
+  },
+
+  getById(id: number): Budget | undefined {
+    const row = db.prepare('SELECT * FROM budgets WHERE id = ?').get(id) as any;
+    if (!row) return undefined;
+    return { ...row, is_active: Boolean(row.is_active) };
+  },
+
+  list(includeInactive = false): Budget[] {
+    const rows = db.prepare(
+      includeInactive
+        ? 'SELECT * FROM budgets ORDER BY start_date DESC'
+        : 'SELECT * FROM budgets WHERE is_active = 1 ORDER BY start_date DESC'
+    ).all() as any[];
+    return rows.map(r => ({ ...r, is_active: Boolean(r.is_active) }));
+  },
+
+  update(id: number, data: Partial<Omit<Budget, 'id' | 'created_at' | 'updated_at'>>): Budget | undefined {
+    const allowed = ['name', 'total_budget', 'start_date', 'end_date', 'notes', 'is_active'];
+    const entries = Object.entries(data).filter(([k]) => allowed.includes(k));
+    if (entries.length === 0) return budgetDB.getById(id);
+    const sets = entries.map(([k]) => `${k} = @${k}`).join(', ');
+    const params: any = Object.fromEntries(entries.map(([k, v]) => [k, typeof v === 'boolean' ? (v ? 1 : 0) : v]));
+    params.id = id;
+    db.prepare(`UPDATE budgets SET ${sets}, updated_at = datetime('now') WHERE id = @id`).run(params);
+    return budgetDB.getById(id);
+  },
+
+  delete(id: number): void {
+    db.prepare('DELETE FROM budgets WHERE id = ?').run(id);
+  },
+
+  getWithItems(id: number): BudgetWithItems | undefined {
+    const budget = budgetDB.getById(id);
+    if (!budget) return undefined;
+    const items = budgetDB.listItems(id);
+    const total_spent = items.reduce((s, i) => s + i.line_total, 0);
+    const total_predicted_revenue = items.reduce((s, i) => s + i.predicted_revenue, 0);
+    const overall_roi_pct = total_spent > 0 ? ((total_predicted_revenue - total_spent) / total_spent) * 100 : 0;
+    return {
+      ...budget,
+      items,
+      total_spent: Math.round(total_spent * 100) / 100,
+      remaining: Math.round((budget.total_budget - total_spent) * 100) / 100,
+      total_predicted_revenue: Math.round(total_predicted_revenue * 100) / 100,
+      overall_roi_pct: Math.round(overall_roi_pct * 100) / 100,
+    };
+  },
+
+  listItems(budgetId: number): BudgetItem[] {
+    return db.prepare('SELECT * FROM budget_items WHERE budget_id = ? ORDER BY position ASC').all(budgetId) as BudgetItem[];
+  },
+
+  addItem(data: {
+    budget_id: number; product_id: number; product_name: string; product_sku: string;
+    supplier_id?: number | null; supplier_name?: string | null;
+    quantity: number; unit_cost: number; predicted_sell_price: number; position?: number;
+  }): BudgetItem {
+    const line_total = data.quantity * data.unit_cost;
+    const predicted_revenue = data.quantity * data.predicted_sell_price;
+    const predicted_roi_pct = line_total > 0 ? ((predicted_revenue - line_total) / line_total) * 100 : 0;
+    const maxPos = (db.prepare('SELECT COALESCE(MAX(position), -1) AS mp FROM budget_items WHERE budget_id = ?').get(data.budget_id) as any).mp;
+    const stmt = db.prepare(`
+      INSERT INTO budget_items (budget_id, product_id, product_name, product_sku, supplier_id, supplier_name, quantity, unit_cost, predicted_sell_price, line_total, predicted_revenue, predicted_roi_pct, position)
+      VALUES (@budget_id, @product_id, @product_name, @product_sku, @supplier_id, @supplier_name, @quantity, @unit_cost, @predicted_sell_price, @line_total, @predicted_revenue, @predicted_roi_pct, @position)
+    `);
+    const result = stmt.run({
+      budget_id: data.budget_id,
+      product_id: data.product_id,
+      product_name: data.product_name,
+      product_sku: data.product_sku,
+      supplier_id: data.supplier_id ?? null,
+      supplier_name: data.supplier_name ?? null,
+      quantity: data.quantity,
+      unit_cost: data.unit_cost,
+      predicted_sell_price: data.predicted_sell_price,
+      line_total: Math.round(line_total * 100) / 100,
+      predicted_revenue: Math.round(predicted_revenue * 100) / 100,
+      predicted_roi_pct: Math.round(predicted_roi_pct * 100) / 100,
+      position: data.position ?? maxPos + 1,
+    });
+    return db.prepare('SELECT * FROM budget_items WHERE id = ?').get(Number(result.lastInsertRowid)) as BudgetItem;
+  },
+
+  updateItem(itemId: number, data: {
+    supplier_id?: number | null; supplier_name?: string | null;
+    quantity?: number; unit_cost?: number; predicted_sell_price?: number; position?: number;
+  }): BudgetItem | undefined {
+    const existing = db.prepare('SELECT * FROM budget_items WHERE id = ?').get(itemId) as BudgetItem | undefined;
+    if (!existing) return undefined;
+    const qty = data.quantity ?? existing.quantity;
+    const cost = data.unit_cost ?? existing.unit_cost;
+    const sell = data.predicted_sell_price ?? existing.predicted_sell_price;
+    const line_total = qty * cost;
+    const predicted_revenue = qty * sell;
+    const predicted_roi_pct = line_total > 0 ? ((predicted_revenue - line_total) / line_total) * 100 : 0;
+    db.prepare(`
+      UPDATE budget_items SET
+        supplier_id = @supplier_id, supplier_name = @supplier_name,
+        quantity = @quantity, unit_cost = @unit_cost, predicted_sell_price = @predicted_sell_price,
+        line_total = @line_total, predicted_revenue = @predicted_revenue,
+        predicted_roi_pct = @predicted_roi_pct, position = @position
+      WHERE id = @id
+    `).run({
+      id: itemId,
+      supplier_id: data.supplier_id !== undefined ? data.supplier_id : existing.supplier_id,
+      supplier_name: data.supplier_name !== undefined ? data.supplier_name : existing.supplier_name,
+      quantity: qty,
+      unit_cost: cost,
+      predicted_sell_price: sell,
+      line_total: Math.round(line_total * 100) / 100,
+      predicted_revenue: Math.round(predicted_revenue * 100) / 100,
+      predicted_roi_pct: Math.round(predicted_roi_pct * 100) / 100,
+      position: data.position ?? existing.position,
+    });
+    return db.prepare('SELECT * FROM budget_items WHERE id = ?').get(itemId) as BudgetItem;
+  },
+
+  removeItem(itemId: number): void {
+    db.prepare('DELETE FROM budget_items WHERE id = ?').run(itemId);
+  },
+
+  reorderItems(budgetId: number, itemIds: number[]): void {
+    const upd = db.prepare('UPDATE budget_items SET position = ? WHERE id = ? AND budget_id = ?');
+    const txn = db.transaction(() => {
+      itemIds.forEach((id, idx) => upd.run(idx, id, budgetId));
+    });
+    txn();
+  },
+};
 
 export default db;

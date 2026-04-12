@@ -75,6 +75,7 @@ export default function MessagesPage() {
   const [quantities, setQuantities] = useState<Record<number, number>>({});
   const [customMessage, setCustomMessage] = useState('');
   const [productSearch, setProductSearch] = useState('');
+  const [includeHypothetical, setIncludeHypothetical] = useState(false);
 
   // Generated messages
   const [supplierMsg, setSupplierMsg] = useState('');
@@ -89,7 +90,7 @@ export default function MessagesPage() {
     ]);
     const prodData: Product[] = await prodRes.json();
     const eventData: ReleaseEventWithProducts[] = await eventRes.json();
-    setProducts(prodData.filter(p => p.is_active && !p.is_hypothetical));
+    setProducts(prodData.filter(p => p.is_active));
     setEvents(eventData);
     setLoading(false);
   }, []);
@@ -117,10 +118,25 @@ export default function MessagesPage() {
     return results;
   }, [events, products]);
 
-  // Available products (stock >= 1) for customer messages
-  const availableProducts = React.useMemo(
-    () => products.filter(p => p.stock_quantity >= 1),
+  // Real (non-hypothetical) products for modes that need them
+  const realProducts = React.useMemo(
+    () => products.filter(p => !p.is_hypothetical),
     [products],
+  );
+
+  // Hypothetical products
+  const hypotheticalProducts = React.useMemo(
+    () => products.filter(p => p.is_hypothetical),
+    [products],
+  );
+
+  // Products visible in custom mode depending on toggle
+  const customModeProducts = includeHypothetical ? products : realProducts;
+
+  // Available products (stock >= 1) for customer messages (never hypothetical)
+  const availableProducts = React.useMemo(
+    () => realProducts.filter(p => p.stock_quantity >= 1),
+    [realProducts],
   );
 
   // Auto-generate supplier message
@@ -177,7 +193,7 @@ export default function MessagesPage() {
     });
   };
 
-  const filteredProducts = products.filter(p =>
+  const filteredProducts = customModeProducts.filter(p =>
     productSearch === '' ||
     p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
     p.sku.toLowerCase().includes(productSearch.toLowerCase()) ||
@@ -226,17 +242,34 @@ export default function MessagesPage() {
         <div className="space-y-4">
           {mode === 'custom' && (
             <>
-              {/* Search */}
-              <div className="relative">
-                <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  value={productSearch}
-                  onChange={e => setProductSearch(e.target.value)}
-                  placeholder="Search products…"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent shadow-sm"
-                />
+              {/* Search + Hypothetical toggle */}
+              <div className="flex gap-2 items-center">
+                <div className="relative flex-1">
+                  <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    value={productSearch}
+                    onChange={e => setProductSearch(e.target.value)}
+                    placeholder="Search products…"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent shadow-sm"
+                  />
+                </div>
+                {hypotheticalProducts.length > 0 && (
+                  <button
+                    onClick={() => setIncludeHypothetical(prev => !prev)}
+                    className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold border transition-colors ${
+                      includeHypothetical
+                        ? 'bg-purple-100 dark:bg-purple-950/40 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300'
+                        : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                    }`}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                    Hypothetical ({hypotheticalProducts.length})
+                  </button>
+                )}
               </div>
 
               {/* Product list with checkboxes and quantity */}
@@ -259,11 +292,18 @@ export default function MessagesPage() {
                         onClick={e => e.stopPropagation()}
                       />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{p.name}</p>
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                          {p.name}
+                          {p.is_hypothetical && (
+                            <span className="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-purple-100 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
+                              Hypothetical
+                            </span>
+                          )}
+                        </p>
                         <p className="text-xs text-gray-400">
                           <span className="font-mono">{p.sku}</span>
                           {p.category && <span className="ml-2">{p.category}</span>}
-                          <span className="ml-2">Stock: {p.stock_quantity}</span>
+                          {!p.is_hypothetical && <span className="ml-2">Stock: {p.stock_quantity}</span>}
                         </p>
                       </div>
                       {isSelected && (
